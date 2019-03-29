@@ -1,2 +1,2 @@
 # wavefront-sensor
-All wavefront sensor processing code
+All wavefront sensor processing code.
