@@ -104,3 +104,6 @@ def calculate_reference_spots(self):
 		if(not self.process_data):
 			break
 	self.canvas.draw()
+
+if __name__=='__main__':
+	print('this is now green')
