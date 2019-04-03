@@ -163,29 +163,19 @@ def get_unbinned_ssf(gradients, aoi_size):
 	ssfy = []
 	i=0
 	
-	gradients_list=[[int(x) for x in ]]
-	aoi_pairs = combinations(gradients, 2)
-	for location_pair in aoi_pairs:
-		r1 = [int(x) for x in location_pair[0].split(',')]
-		r2 = [int(x) for x in location_pair[1].split(',')]
-		if(i==0):
-			t0=time.time()
-		pair_difference = np.subtract(gradients[location_pair[0]], gradients[location_pair[1]])
-		if(i==0):
-			t1=time.time()
-		xpair_difference_squared = np.square(pair_difference[0])
-		ypair_difference_squared = np.square(pair_difference[1])
-		pair_difference_squared = xpair_difference_squared+ypair_difference_squared
-		if(i==0):
-			t2=time.time()
-		separation = np.linalg.norm(np.multiply(1/aoi_size, np.subtract(r1, r2)))
-		ssf.append((separation, pair_difference_squared))
-		ssfx.append((separation, xpair_difference_squared))
-		ssfy.append((separation, ypair_difference_squared))
-		if(i==0):
-			t3=time.time()
-			print(t1-t0, t2-t1, t3-t2)
-		i+=1
+	gradients_list = list(gradients.items())
+	gradients_array = np.array([[[float(x) for x in gradient[0].split(',')], gradient[1]] for gradient in gradients_list])
+	aoi_pairs = np.array(list(combinations(gradients_array, 2)))
+	
+	pair_difference = np.subtract(aoi_pairs[:,0], aoi_pairs[:,1])
+	separations = np.linalg.norm(np.multiply(1/aoi_size, np.subtract(aoi_pairs[:,0,0], aoi_pairs[:,1,0])), axis=1)
+	xpair_difference_squared = np.square(pair_difference[:,1,0])
+	ypair_difference_squared = np.square(pair_difference[:,1,1])
+	pair_difference_squared = xpair_difference_squared+ypair_difference_squared
+	
+	ssf = np.transpose(np.stack((separations, pair_difference_squared)))
+	ssfx = np.transpose(np.stack((separations, xpair_difference_squared)))
+	ssfy = np.transpose(np.stack((separations, ypair_difference_squared)))
 
 	
 	return np.array(ssf), np.array(ssfx), np.array(ssfy)
@@ -253,7 +243,7 @@ def process_all_frames(images_array, references, aoi_size, focal_length, pixel_s
 
 
 	aoi_locations = list(references.keys())
-	framenum=0
+	framenum=1
 	for frame in images_array:
 		centroids = find_centroids(frame, aoi_locations, aoi_size)
 		differences, gradients = find_slopes(centroids, references, focal_length, pixel_size, wavelength, magnification)
@@ -264,10 +254,13 @@ def process_all_frames(images_array, references, aoi_size, focal_length, pixel_s
 		ssf_list.append(ssf)
 		ssfx_list.append(ssfx)
 		ssfy_list.append(ssfy)
-		print(framenum)
+		print('Frame:', framenum)
 		framenum+=1
 
 	ssf_list, ssfx_list, ssfy_list = np.array(ssf_list), np.array(ssfx_list), np.array(ssfy_list)
+	ssf = np.mean(ssf_list, axis=0)
+	ssfx = np.mean(ssfx_list, axis=0)
+	ssfy = np.mean(ssfy_list, axis=0)
 	
 
 	r0_full = fit_ssf(ssf, aoi_size, pixel_size, magnification, fit_type='full')
@@ -284,13 +277,9 @@ def run():
 	pixel_size = 7.4e-6
 	wavelength = 640e-9
 	magnification = 40
-	print('Reading file')
 	images_array, times, version, bitdepth = read_file(filepath)
-	print('Getting aoi locations')
 	aoi_locations, summed_array = get_aoi_locations(images_array, aoi_size)
-	print('Calculating reference spots')
 	references = calculate_reference_spots(summed_array, aoi_locations, aoi_size)
-	print('Processing all frames')
 	r0_full, r0_individual = process_all_frames(images_array, references, aoi_size, focal_length, pixel_size, wavelength, magnification)
 	print(r0_full, r0_individual)
 
