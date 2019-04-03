@@ -6,10 +6,6 @@ from scipy.optimize import curve_fit
 from scipy.ndimage import maximum_filter
 from itertools import combinations
 
-import matplotlib.pyplot as plt
-import time
-
-
 
 def read_file(filepath):
 	#Inputs:
