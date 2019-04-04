@@ -76,6 +76,7 @@ def get_aoi_locations(images_array, aoi_size, threshold=0.2):
     local_maxima[:,-int((aoi_size+1)/2):]=0
     local_maxima[:int((aoi_size+1)/2),:]=0
     local_maxima[-int((aoi_size+1)/2):,:]=0
+
     
     (xcoords, ycoords) = np.where(local_maxima==1)
     local_maxima_coords = np.transpose(np.stack((ycoords, xcoords)))
@@ -250,7 +251,6 @@ def process_all_frames(images_array, references, aoi_size, focal_length, pixel_s
         ssf_list.append(ssf)
         ssfx_list.append(ssfx)
         ssfy_list.append(ssfy)
-        print('Frame:', framenum)
         framenum+=1
 
     ssf_list, ssfx_list, ssfy_list = np.array(ssf_list), np.array(ssfx_list), np.array(ssfy_list)
@@ -264,22 +264,3 @@ def process_all_frames(images_array, references, aoi_size, focal_length, pixel_s
 
     return r0_full, r0_individual
 
-
-def run():
-    filepath = '/home/ian/Desktop/workspace/acs/data2018_08_28_16_08_25/data2018_08_28_16_08_25.dat'
-
-    aoi_size = 19
-    focal_length = 6.7e-3
-    pixel_size = 7.4e-6
-    wavelength = 640e-9
-    magnification = 40
-    images_array, times, version, bitdepth = read_file(filepath)
-    aoi_locations, summed_array = get_aoi_locations(images_array, aoi_size)
-    references = calculate_reference_spots(summed_array, aoi_locations, aoi_size)
-    r0_full, r0_individual = process_all_frames(images_array, references, aoi_size, focal_length, pixel_size, wavelength, magnification)
-    print(r0_full, r0_individual)
-
-
-
-if __name__=='__main__':
-    run()
