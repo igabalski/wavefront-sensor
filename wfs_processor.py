@@ -278,7 +278,7 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     # r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
     # ssf = full slope structure function numpy array of the form [r, ssf(r)] where r is measured in aois
     # ssfx = x slope structure function numpy array of the form [r, ssfx(r)] where r is measured in aois
-    # ssfy = fy slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
+    # ssfy = y slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
 
     images_array, time_list, version, bitdepth = read_file(filepath)
     aoi_locations, summed_array = get_aoi_locations(images_array, aoi_size)
