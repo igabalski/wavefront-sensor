@@ -11,7 +11,7 @@ def read_file(filepath):
     #Inputs:
     # filepath = path to wavefront sensor image file to be read
     #Returns:
-    # image_array = numpy array of image frames, 16-bit unsigned integer pixel values
+    # images_array = numpy array of image frames, 16-bit unsigned integer pixel values
     # time_list = time stamps for each frame
     # version = file format version
     # bitdepth = camera bit depth
@@ -109,19 +109,19 @@ def find_centroids(image, aoi_locations, aoi_size):
     return centroids
 
 
-def calculate_reference_spots(summed_array, aoi_locations, aoi_size):
+def calculate_references(summed_array, aoi_locations, aoi_size):
     #Inputs:
     # summed_array = the summed image of wavefront sensor spots from which to calculate reference centroids
     # aoi_locations = list of strings of the form 'x,y' where x, y are integer locations of top left corner of aois
     # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
     # threshold = all pixels less than the max pixel value times threshold set to zero to eliminate noise
     #Returns:
-    # reference_spots = a dictionary of the form {'x_location,y_location':[x_centroid, y_centroid]} referenced from top left of aois, representing reference centroids
+    # references = a dictionary of the form {'x_location,y_location':[x_centroid, y_centroid]} referenced from top left of aois, representing reference centroids
 
-    reference_spots = find_centroids(summed_array, aoi_locations, aoi_size)
+    references = find_centroids(summed_array, aoi_locations, aoi_size)
 
 
-    return reference_spots
+    return references
 
 
 def find_slopes(centroids, references, focal_length, pixel_size, wavelength, magnification):
@@ -233,6 +233,9 @@ def process_all_frames(images_array, references, aoi_size, focal_length, pixel_s
     #Returns:
     # r0_full = Fried parameter r0 calculated using full slope structure function method
     # r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
+    # ssf = full slope structure function numpy array of the form [r, ssf(r)] where r is measured in aois
+    # ssfx = x slope structure function numpy array of the form [r, ssfx(r)] where r is measured in aois
+    # ssfy = fy slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
 
     ssf_list = []
     ssfx_list = []
@@ -240,7 +243,6 @@ def process_all_frames(images_array, references, aoi_size, focal_length, pixel_s
 
 
     aoi_locations = list(references.keys())
-    framenum=1
     for frame in images_array:
         centroids = find_centroids(frame, aoi_locations, aoi_size)
         differences, gradients = find_slopes(centroids, references, focal_length, pixel_size, wavelength, magnification)
@@ -251,7 +253,6 @@ def process_all_frames(images_array, references, aoi_size, focal_length, pixel_s
         ssf_list.append(ssf)
         ssfx_list.append(ssfx)
         ssfy_list.append(ssfy)
-        framenum+=1
 
     ssf_list, ssfx_list, ssfy_list = np.array(ssf_list), np.array(ssfx_list), np.array(ssfy_list)
     ssf = np.mean(ssf_list, axis=0)
@@ -262,5 +263,26 @@ def process_all_frames(images_array, references, aoi_size, focal_length, pixel_s
     r0_full = fit_ssf(ssf, aoi_size, pixel_size, magnification, fit_type='full')
     r0_individual = np.mean((fit_ssf(ssfx, aoi_size, pixel_size, magnification, fit_type='individual'), fit_ssf(ssfy, aoi_size, pixel_size, magnification, fit_type='individual')))
 
-    return r0_full, r0_individual
+    return r0_full, r0_individual, ssf, ssfx, ssfy
 
+def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification):
+    #Inputs:
+    # filepath = path to wavefront sensor raw video file to be processed
+    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
+    # focal_length = float representing focal length of lenslets in meters
+    # pixel_size = size of pixels in meters
+    # wavelength = wavelength in meters
+    # magnification = magnification of telescope system as a raw number
+    #Returns:
+    # r0_full = Fried parameter r0 calculated using full slope structure function method
+    # r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
+    # ssf = full slope structure function numpy array of the form [r, ssf(r)] where r is measured in aois
+    # ssfx = x slope structure function numpy array of the form [r, ssfx(r)] where r is measured in aois
+    # ssfy = fy slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
+
+    images_array, time_list, version, bitdepth = read_file(filepath)
+    aoi_locations, summed_array = get_aoi_locations(images_array, aoi_size)
+    references = calculate_references(summed_array, aoi_locations, aoi_size)
+    r0_full, r0_individual, ssf, ssfx, ssfy = process_all_frames(images_array, references, aoi_size, focal_length, pixel_size, wavelength, magnification)
+
+    return r0_full, r0_individual, ssf, ssfx, ssfy
