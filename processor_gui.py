@@ -105,6 +105,8 @@ class ACSDataApp(tk.Tk):
                 image_frame.plot_data(summed_array)
             elif(isinstance(return_values, tuple)):
                 self.r0_full, self.r0_individual, self.ssf, self.ssfx, self.ssfy = return_values 
+                self.frames[ACSPlotsFrame].set_slope_struct_functions(self.ssf, self.ssfx, self.ssfy, self.r0_full, self.r0_individual)
+                self.frames[ACSPlotsFrame].plot_data()
                 image_frame.status_label.config(text='Status: Processing Complete')
                 print(self.r0_full, self.r0_individual)
             else:
@@ -258,7 +260,7 @@ class ACSImageFrame(tk.Frame):
         self.im = self.a.imshow(image)
         for aoi in self.aoi_locations:
             x, y = aoi[0], aoi[1]
-            self.a.add_patch(patches.Circle((x+int((self.aoi_size+1)/2),y+int((self.aoi_size+1)/2)),radius=2,edgecolor='r',facecolor='r'))
+            self.a.add_patch(patches.Circle((x+int(self.aoi_size/2),y+int(self.aoi_size/2)),radius=2,edgecolor='r',facecolor='r'))
             self.a.add_patch(patches.Rectangle((x,y), self.aoi_size, self.aoi_size, edgecolor='c', facecolor='none'))
         self.canvas.draw()
 
@@ -305,14 +307,9 @@ class ACSPlotsFrame(tk.Frame):
         self.title_label.pack(side=tk.TOP, padx=10, pady=10)
         
         
-        self.last_frame_button=tk.Button(self, text='Last Frame', 
-                                        command= lambda: self.show_last_frame(), height=2, width=20)
-        self.last_frame_button.pack(side=tk.TOP, padx=30, pady=10)
-        
-        
-        self.next_frame_button=tk.Button(self, text='Next Frame', 
-                                        command= lambda: self.show_next_frame(), height=2, width=20)
-        self.next_frame_button.pack(side=tk.TOP, padx=30, pady=10)
+        self.plot_toggle_button=tk.Button(self, text='Show XY SSF', 
+                                        command=lambda: self.toggle_plots(), height=2, width=20)
+        self.plot_toggle_button.pack(side=tk.TOP, padx=30, pady=10)
         
         
         self.f = Figure(figsize=(2,2), dpi=100)
@@ -322,49 +319,76 @@ class ACSPlotsFrame(tk.Frame):
         self.canvas.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
         self.canvas.draw()
         
-        self.im=None
+        self.im = None
+
+        self.current_plot = 'Full'
+        self.ssf = []
+        self.ssfx = []
+        self.ssfy = []
+        self.r0_full = None
+        self.r0_individual = None
         
     
     
     def set_control_frame(self, controlframe):
         self.controlframe=controlframe
         return None
-            
-    def set_slope_struct_functions(self, slope_struct_funcs, r0_vals):
-        
-        self.slope_struct_functions=slope_struct_funcs
-        self.r0=r0_vals
     
+
+    def set_slope_struct_functions(self, ssf, ssfx, ssfy, r0_full, r0_individual):
+        self.ssf = ssf
+        self.ssfx = ssfx
+        self.ssfy = ssfy
+        self.r0_full = r0_full
+        self.r0_individual = r0_individual
+    
+
     def plot_data(self):
         self.a.clear()
-        d_sub=self.controller.frames[ACSDataFrame].pixel_size*self.controller.frames[ACSDataFrame].subaperture_size*self.controller.frames[ACSDataFrame].magnification
-        
-        rs=np.arange(len(self.slope_struct_functions[self.framenum]))
-        r_form=np.linspace(0,len(self.slope_struct_functions[self.framenum]),10000)
-        
-        D_form=[0.77*6.88/(d_sub**2)*(d_sub/(self.r0[self.r0_framenum]))**(5/3)*(r**2/(1+r**2)+0.438*r**(0.2555)) for r in r_form]
-        
-        self.x=self.a.plot(rs, self.slope_struct_functions[self.framenum], label=r'$D$')
-        
-        self.x=self.a.plot(r_form, D_form, label=r'$D_{form}$')
-        self.a.legend(prop={'size':15})
-        self.a.set_xlabel(r'$\Delta r$')
-        self.a.set_ylabel(r'$D_s$')
-        self.canvas.draw()
-        
-        
-    def show_last_frame(self):
-        if(self.framenum>0):
-            self.framenum-=1
-            self.r0_framenum-=1
-            self.plot_data()
-            
-    
-    def show_next_frame(self):
-        if(self.framenum<len(self.slope_struct_functions)-1):
-            self.framenum+=1
-            self.r0_framenum+=1
-            self.plot_data()
+
+        d_sub = self.controller.pixel_size*self.controller.aoi_size*self.controller.magnification
+
+        def functional_form_full(r, r0):
+            val = np.multiply(6.88/(d_sub**2)*(d_sub/r0)**(5/3)*1.32, np.add(np.divide(np.square(r),np.add(5.4,np.square(r))),np.multiply(0.557, np.power(r, 0.213))))
+            return val
+
+        def functional_form_individual(r, r0):
+            val = np.multiply(6.88/(d_sub**2)*(d_sub/r0)**(5/3)*0.77, np.add(np.divide(np.square(r),np.add(1,np.square(r))),np.multiply(0.438, np.power(r, 0.2555))))
+            return val        
+        if(self.current_plot=='Full'):
+            r0 = self.r0_full
+            functional_form = functional_form_full
+            ssf = self.ssf
+            r = np.linspace(0,ssf[-1,0],1000)
+            print(ssf)
+            self.a.plot(ssf[:,0], ssf[:,1], 'r--', label='Data')
+            self.a.plot(r, functional_form(r, r0), 'r-', label='Fit')
+            self.a.legend(prop={'size':15})
+            self.a.set_xlabel(r'$\Delta r$')
+            self.a.set_ylabel(r'$D_s$')
+            self.canvas.draw()
+        elif(self.current_plot=='XY'):
+            r0 = self.r0_individual
+            functional_form = functional_form_individual
+            ssfx, ssfy = self.ssfx, self.ssfy
+            r = np.linspace(0,ssfx[-1,0],1000)
+            self.a.plot(ssfx[:,0], ssfx[:,1], 'r--', label='X Data')
+            self.a.plot(ssfy[:,0], ssfy[:,1], 'g--', label='Y Data')
+            self.a.plot(r, functional_form(r, r0), 'b-', label='Fit')
+            self.a.legend(prop={'size':15})
+            self.a.set_xlabel(r'$\Delta r$')
+            self.a.set_ylabel(r'$D_{x,y}$')
+            self.canvas.draw()
+
+    def toggle_plots(self):
+        if(self.current_plot=='Full'):
+            self.current_plot='XY'
+            self.plot_toggle_button.config(text='Show Full SSF')
+        elif(self.current_plot=='XY'):
+            self.current_plot='Full'
+            self.plot_toggle_button.config(text='Show XY SSF')
+        self.plot_data()
+
 
 
 if __name__=='__main__':
