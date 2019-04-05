@@ -229,23 +229,26 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     # pixel_size = size of pixels in meters
     # wavelength = wavelength in meters
     # magnification = magnification of telescope system as a raw number
-    #Returns:
-    # r0_full = Fried parameter r0 calculated using full slope structure function method
-    # r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
-    # ssf = full slope structure function numpy array of the form [r, ssf(r)] where r is measured in aois
-    # ssfx = x slope structure function numpy array of the form [r, ssfx(r)] where r is measured in aois
-    # ssfy = fy slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
+    #Yields:
+    # (Intermediate) framenum = index of frame that was just processed
+    # (Final) r0_full = Fried parameter r0 calculated using full slope structure function method
+    # (Final) r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
+    # (Final) ssf = full slope structure function numpy array of the form [r, ssf(r)] where r is measured in aois
+    # (Final) ssfx = x slope structure function numpy array of the form [r, ssfx(r)] where r is measured in aois
+    # (Final) ssfy = fy slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
     '''
     NOTE:
     This function is a generator which iterates over frames and yields in between frames.
-    The intermediate yield values are None, and the final yield value is the list of outputs.
+    The intermediate yield values are the current frame index, and the final yield value is a tuple of the final outputs.
 
     Proper use is:
     file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification)
-    return_values = 0
     for frame in file_processor:
         return_values = frame
-        ...update gui code...
+        if(not isinstance(return_values, tuple)):
+            ...update gui with frame number...
+        else:
+            ...update gui with 'fitting ssf data' message...
     r0_full, r0_individual, ssf, ssfx, ssfy = return values
     '''
 
@@ -258,6 +261,7 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     references = calculate_references(summed_array, aoi_locations, aoi_size)
 
     try:
+        framenum = 0
         for frame in images_array:
             centroids = find_centroids(frame, aoi_locations, aoi_size)
             differences, gradients = find_slopes(centroids, references, focal_length, pixel_size, wavelength, magnification)
@@ -268,7 +272,8 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
             ssf_list.append(ssf)
             ssfx_list.append(ssfx)
             ssfy_list.append(ssfy)
-            yield None
+            yield framenum
+            framenum += 1
 
     finally:
         ssf_list, ssfx_list, ssfy_list = np.array(ssf_list), np.array(ssfx_list), np.array(ssfy_list)
