@@ -221,68 +221,67 @@ def fit_ssf(ssf_array, aoi_size, pixel_size, magnification, fit_type='full'):
     return params[0]
 
 
-def process_all_frames(images_array, references, aoi_size, focal_length, pixel_size, wavelength, magnification):
+def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification):
     #Inputs:
-    # images_array = the numpy array of images for which to calculate reference spots
-    # reference_spots = a dictionary of the form {'x_location,y_location':[x_centroid, y_centroid]} referenced from top left of aois, representing reference centroids
+    # filepath = path to the file to be processed
     # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
     # focal_length = float representing focal length of lenslets in meters
     # pixel_size = size of pixels in meters
     # wavelength = wavelength in meters
     # magnification = magnification of telescope system as a raw number
-    #Returns:
-    # r0_full = Fried parameter r0 calculated using full slope structure function method
-    # r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
-    # ssf = full slope structure function numpy array of the form [r, ssf(r)] where r is measured in aois
-    # ssfx = x slope structure function numpy array of the form [r, ssfx(r)] where r is measured in aois
-    # ssfy = fy slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
+    #Yields:
+    # (Intermediate) framenum = index of frame that was just processed
+    # (Final) r0_full = Fried parameter r0 calculated using full slope structure function method
+    # (Final) r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
+    # (Final) ssf = full slope structure function numpy array of the form [r, ssf(r)] where r is measured in aois
+    # (Final) ssfx = x slope structure function numpy array of the form [r, ssfx(r)] where r is measured in aois
+    # (Final) ssfy = fy slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
+    '''
+    NOTE:
+    This function is a generator which iterates over frames and yields in between frames.
+    The intermediate yield values are the current frame index, and the final yield value is a tuple of the final outputs.
+
+    Proper use is:
+    file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification)
+    for frame in file_processor:
+        return_values = frame
+        if(not isinstance(return_values, tuple)):
+            ...update gui with frame number...
+        else:
+            ...update gui with 'fitting ssf data' message...
+    r0_full, r0_individual, ssf, ssfx, ssfy = return values
+    '''
 
     ssf_list = []
     ssfx_list = []
     ssfy_list = []
 
-
-    aoi_locations = list(references.keys())
-    for frame in images_array:
-        centroids = find_centroids(frame, aoi_locations, aoi_size)
-        differences, gradients = find_slopes(centroids, references, focal_length, pixel_size, wavelength, magnification)
-        unbinned_ssf, unbinned_ssfx, unbinned_ssfy = get_unbinned_ssf(gradients, aoi_size)
-        ssf = get_binned_ssf(unbinned_ssf)
-        ssfx = get_binned_ssf(unbinned_ssfx)
-        ssfy = get_binned_ssf(unbinned_ssfy)
-        ssf_list.append(ssf)
-        ssfx_list.append(ssfx)
-        ssfy_list.append(ssfy)
-
-    ssf_list, ssfx_list, ssfy_list = np.array(ssf_list), np.array(ssfx_list), np.array(ssfy_list)
-    ssf = np.mean(ssf_list, axis=0)
-    ssfx = np.mean(ssfx_list, axis=0)
-    ssfy = np.mean(ssfy_list, axis=0)
-    
-
-    r0_full = fit_ssf(ssf, aoi_size, pixel_size, magnification, fit_type='full')
-    r0_individual = np.mean((fit_ssf(ssfx, aoi_size, pixel_size, magnification, fit_type='individual'), fit_ssf(ssfy, aoi_size, pixel_size, magnification, fit_type='individual')))
-
-    return r0_full, r0_individual, ssf, ssfx, ssfy
-
-def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification):
-    #Inputs:
-    # filepath = path to wavefront sensor raw video file to be processed
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    # focal_length = float representing focal length of lenslets in meters
-    # pixel_size = size of pixels in meters
-    # wavelength = wavelength in meters
-    # magnification = magnification of telescope system as a raw number
-    #Returns:
-    # r0_full = Fried parameter r0 calculated using full slope structure function method
-    # r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
-    # ssf = full slope structure function numpy array of the form [r, ssf(r)] where r is measured in aois
-    # ssfx = x slope structure function numpy array of the form [r, ssfx(r)] where r is measured in aois
-    # ssfy = y slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
-
     images_array, time_list, version, bitdepth = read_file(filepath)
     aoi_locations, summed_array = get_aoi_locations(images_array, aoi_size)
     references = calculate_references(summed_array, aoi_locations, aoi_size)
-    r0_full, r0_individual, ssf, ssfx, ssfy = process_all_frames(images_array, references, aoi_size, focal_length, pixel_size, wavelength, magnification)
 
-    return r0_full, r0_individual, ssf, ssfx, ssfy
+    try:
+        framenum = 0
+        for frame in images_array:
+            centroids = find_centroids(frame, aoi_locations, aoi_size)
+            differences, gradients = find_slopes(centroids, references, focal_length, pixel_size, wavelength, magnification)
+            unbinned_ssf, unbinned_ssfx, unbinned_ssfy = get_unbinned_ssf(gradients, aoi_size)
+            ssf = get_binned_ssf(unbinned_ssf)
+            ssfx = get_binned_ssf(unbinned_ssfx)
+            ssfy = get_binned_ssf(unbinned_ssfy)
+            ssf_list.append(ssf)
+            ssfx_list.append(ssfx)
+            ssfy_list.append(ssfy)
+            yield framenum
+            framenum += 1
+
+    finally:
+        ssf_list, ssfx_list, ssfy_list = np.array(ssf_list), np.array(ssfx_list), np.array(ssfy_list)
+        ssf = np.mean(ssf_list, axis=0)
+        ssfx = np.mean(ssfx_list, axis=0)
+        ssfy = np.mean(ssfy_list, axis=0)
+        
+        r0_full = fit_ssf(ssf, aoi_size, pixel_size, magnification, fit_type='full')
+        r0_individual = np.mean((fit_ssf(ssfx, aoi_size, pixel_size, magnification, fit_type='individual'), fit_ssf(ssfy, aoi_size, pixel_size, magnification, fit_type='individual')))
+
+        yield r0_full, r0_individual, ssf, ssfx, ssfy
