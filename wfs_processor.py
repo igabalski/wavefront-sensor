@@ -282,7 +282,6 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
             yield framenum
             framenum += 1
 
-    finally:
         ssf_list, ssfx_list, ssfy_list = np.array(ssf_list), np.array(ssfx_list), np.array(ssfy_list)
         ssf = np.mean(ssf_list, axis=0)
         ssfx = np.mean(ssfx_list, axis=0)
@@ -292,3 +291,6 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
         r0_individual = np.mean((fit_ssf(ssfx, aoi_size, pixel_size, magnification, fit_type='individual'), fit_ssf(ssfy, aoi_size, pixel_size, magnification, fit_type='individual')))
 
         yield r0_full, r0_individual, ssf, ssfx, ssfy
+    
+    except StopIteration:
+        pass
