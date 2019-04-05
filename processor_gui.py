@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter.filedialog import askopenfilename, asksaveasfilename, askdirectory
 import os
 import time
+import numpy as np
+import threading
 
 from tkinter import ttk
 import matplotlib
@@ -89,6 +91,7 @@ class ACSDataApp(tk.Tk):
     def process_data(self):
         image_frame = self.frames[ACSImageFrame]
         plots_frame = self.frames[ACSPlotsFrame]
+        self.continue_processing = True
 
         self.get_parameters()
         file_processor = wfs.process_file(self.filepath, self.aoi_size, self.focal_length, self.pixel_size, self.wavelength, self.magnification)
@@ -96,12 +99,27 @@ class ACSDataApp(tk.Tk):
             return_values = frame
             if(isinstance(return_values, list)):
                 aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
-                ...update gui with aoi locations...
+                summed_array = np.sum(self.images_array, axis=0)
+                image_frame.status_label.config(text='Status: Finding reference spots...')
+                image_frame.add_aoi_locations(aoi_locations, self.aoi_size)
+                image_frame.plot_data(summed_array)
             elif(isinstance(return_values, tuple)):
-                ...update gui with 'fitting ssf data' message...
+                self.r0_full, self.r0_individual, self.ssf, self.ssfx, self.ssfy = return_values 
+                image_frame.status_label.config(text='Status: Processing Complete')
+                print(self.r0_full, self.r0_individual)
             else:
-                ...update gui with frame number...
-        r0_full, r0_individual, ssf, ssfx, ssfy = return_values 
+                image_frame.status_label.config(text='Status: Processing frames...')
+                image_frame.update_framenum(return_values)
+            if(not self.continue_processing):
+                break
+
+    def thread_process_data(self):
+        threading.Thread(target=self.process_data).start()
+
+
+    def cancel_data_processing(self):
+        self.continue_processing = False
+        self.frames[ACSImageFrame].status_label.config(text='Status: Processing cancelled')
 
 
 
@@ -112,8 +130,8 @@ class ACSControlsFrame(tk.Frame):
         tk.Frame.__init__(self, parent)
         
         self.controller=controller
-        self.imageframe=imageframe
-        self.plotsframe=plotsframe
+        self.image_frame=imageframe
+        self.plots_frame=plotsframe
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         
@@ -121,17 +139,21 @@ class ACSControlsFrame(tk.Frame):
                                         command = self.controller.open_file, height=2, width=20)
         self.open_file_button.pack(side=tk.TOP, padx=30, pady=10)
         
-
+        
+        self.open_file_button=tk.Button(self, text='Process Data', 
+                                        command = self.controller.thread_process_data, height=2, width=20)
+        self.open_file_button.pack(side=tk.TOP, padx=30, pady=10)
         
         
         self.cancel_data_processing_button=tk.Button(self, text='Cancel Data Processing', 
-                                        command= self.imageframe.cancel_data_processing, height=2, width=20)
+                                        command= self.image_frame.cancel_data_processing, height=2, width=20)
         self.cancel_data_processing_button.pack(side=tk.TOP, padx=30, pady=10)
         
         
         self.show_image_button=tk.Button(self, text='Show Data', 
                                         command= lambda: self.controller.show_frame(ACSImageFrame), height=2, width=20)
         self.show_image_button.pack(side=tk.TOP, padx=30, pady=10)
+
         
         self.show_plots_button=tk.Button(self, text='Show Plots', 
                                         command= lambda: self.controller.show_frame(ACSPlotsFrame), height=2, width=20)
@@ -199,9 +221,6 @@ class ACSImageFrame(tk.Frame):
 
         tk.Frame.__init__(self, parent)
         self.controller=controller
-        self.timeIn = []
-        self.dataArray = []
-        self.imagesArray = []
         
         self.control_frame=None
         self.grid_rowconfigure(0, weight=1)
@@ -221,13 +240,13 @@ class ACSImageFrame(tk.Frame):
         
         self.f = Figure(figsize=(2,2), dpi=100)
         self.a = self.f.add_subplot(111)
-        
-        
         self.canvas = FigureCanvasTkAgg(self.f, self)
         self.canvas.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
         self.canvas.draw()
-        
         self.im=None
+
+        self.aoi_locations = []
+        self.aoi_size = 20
         
     
     def set_control_frame(self, control_frame):
@@ -237,12 +256,17 @@ class ACSImageFrame(tk.Frame):
     def plot_data(self, image):
         self.a.clear()
         self.im = self.a.imshow(image)
+        for aoi in self.aoi_locations:
+            x, y = aoi[0], aoi[1]
+            self.a.add_patch(patches.Circle((x+int((self.aoi_size+1)/2),y+int((self.aoi_size+1)/2)),radius=2,edgecolor='r',facecolor='r'))
+            self.a.add_patch(patches.Rectangle((x,y), self.aoi_size, self.aoi_size, edgecolor='c', facecolor='none'))
         self.canvas.draw()
 
 
     def update_framenum(self, framenum):
         self.current_framenum = framenum
         self.framenum_label.config(text='Frame: '+str(self.current_framenum+1)+'/'+str(self.total_framenum))
+        self.canvas.draw()
 
 
     def update_filepath(self, filepath):
@@ -253,14 +277,17 @@ class ACSImageFrame(tk.Frame):
     def initialize_new_data(self, image, numframes, filepath):
         self.plot_data(image)
         self.total_framenum = numframes
-        self.update_framenum(self.current_framenum)
         self.update_filepath(filepath)
+        self.update_framenum(self.current_framenum)
 
+
+    def add_aoi_locations(self, aoi_locations, aoi_size):
+        self.aoi_locations = aoi_locations
+        self.aoi_size = aoi_size
 
 
     def cancel_data_processing(self):
-        self.process_data=False
-        self.read_data=False
+        self.controller.cancel_data_processing()
 
 
 
