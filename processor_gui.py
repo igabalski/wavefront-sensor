@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter.filedialog import askopenfilename, asksaveasfilename, askdirectory
 import os
+import time
 
 from tkinter import ttk
 import matplotlib
@@ -19,8 +20,8 @@ import wfs_processor as wfs
 class ACSDataApp(tk.Tk):
 
     def safe_quit(self):
-        self.frames[ACSDataFrame].cancel_data_processing()
-        time.sleep(0.3)
+        self.frames[ACSImageFrame].cancel_data_processing()
+        time.sleep(0.2)
         self.quit()
         self.destroy()
 
@@ -40,26 +41,22 @@ class ACSDataApp(tk.Tk):
         self.frames={}
         image_frame=ACSImageFrame(container, self)
         plots_frame=ACSPlotsFrame(container, self)
-        controls_frame=ACSControlsFrame(container, self, clickerframe, plotsframe)
+        controls_frame=ACSControlsFrame(container, self, image_frame, plots_frame)
         
         
-        self.frames[ACSDataControls]=controlframe
-        controlframe.grid(row=0, column=0, sticky='nsew')
-        self.show_frame(ACSDataControls)
+        self.frames[ACSControlsFrame]=controls_frame
+        controls_frame.grid(row=0, column=0, sticky='nsew')
+        self.show_frame(ACSControlsFrame)
         
-        self.frames[ACSPlotsFrame]=plotsframe
-        plotsframe.grid(row=0, column=1, sticky='nsew')
+        self.frames[ACSPlotsFrame]=plots_frame
+        plots_frame.grid(row=0, column=1, sticky='nsew')
         self.show_frame(ACSPlotsFrame)
         
-        self.frames[ACSSlopeStructPlotFrame]=ssplotsframe
-        ssplotsframe.grid(row=0, column=1, sticky='nsew')
-        self.show_frame(ACSSlopeStructPlotFrame)
+        self.frames[ACSImageFrame]=image_frame
+        image_frame.grid(row=0, column=1, sticky='nsew')
+        self.show_frame(ACSImageFrame)
         
-        self.frames[ACSDataFrame]=clickerframe
-        clickerframe.grid(row=0, column=1, sticky='nsew')
-        self.show_frame(ACSDataFrame)
-        
-        self.protocol("WM_DELETE_WINDOW", app.safe_quit)
+        self.protocol("WM_DELETE_WINDOW", self.safe_quit)
         
         self.geometry('1250x750')
 
@@ -69,8 +66,19 @@ class ACSDataApp(tk.Tk):
         frame.tkraise()
 
 
+    def open_file(self):
+        self.filepath = askopenfilename(title = 'Choose a file')
 
-class ACSDataControls(tk.Frame):
+        if(len(self.filepath)==0):
+            return None
+
+        self.images_array, self.time_list, self.version, self.bitdepth = wfs.read_file(self.filepath)
+        self.frames[ACSImageFrame].initialize_new_data(self.images_array[0], len(self.images_array), self.filepath)
+
+
+
+
+class ACSControlsFrame(tk.Frame):
     
     def __init__(self, parent, controller, imageframe, plotsframe):
         tk.Frame.__init__(self, parent)
@@ -81,8 +89,8 @@ class ACSDataControls(tk.Frame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         
-        self.open_file_button=tk.Button(self, text='Open and Process Data', 
-                                        command= self.imageframe.thread_open_file, height=2, width=20)
+        self.open_file_button=tk.Button(self, text='Open File', 
+                                        command = self.controller.open_file, height=2, width=20)
         self.open_file_button.pack(side=tk.TOP, padx=30, pady=10)
         
 
@@ -93,25 +101,15 @@ class ACSDataControls(tk.Frame):
         self.cancel_data_processing_button.pack(side=tk.TOP, padx=30, pady=10)
         
         
-        self.show_data_button=tk.Button(self, text='Show Data', 
-                                        command= lambda: self.controller.show_frame(ACSDataFrame), height=2, width=20)
-        self.show_data_button.pack(side=tk.TOP, padx=30, pady=10)
+        self.show_image_button=tk.Button(self, text='Show Data', 
+                                        command= lambda: self.controller.show_frame(ACSImageFrame), height=2, width=20)
+        self.show_image_button.pack(side=tk.TOP, padx=30, pady=10)
         
-        self.show_plots_button=tk.Button(self, text='Show Cn2 Plots', 
+        self.show_plots_button=tk.Button(self, text='Show Plots', 
                                         command= lambda: self.controller.show_frame(ACSPlotsFrame), height=2, width=20)
         self.show_plots_button.pack(side=tk.TOP, padx=30, pady=10)
-        
-        self.show_ssplots_button=tk.Button(self, text='Show Slope Structure Plots', 
-                                        command= lambda: self.controller.show_frame(ACSSlopeStructPlotFrame), height=2, width=20)
-        self.show_ssplots_button.pack(side=tk.TOP, padx=30, pady=10)
-        
-        
 
-        self.numframes_averaged_label=tk.Label(self, text='Number of Frames to Average')
-        self.numframes_averaged_label.pack(side=tk.TOP, padx=10, pady=(10,0))
-        self.numframes_averaged_entry=tk.Entry(self)
-        self.numframes_averaged_entry.insert(0, '60')
-        self.numframes_averaged_entry.pack(side=tk.TOP, padx=10, pady=0)
+        
 
         
         self.path_length_label=tk.Label(self, text='Path Length (meters)')
@@ -148,6 +146,13 @@ class ACSDataControls(tk.Frame):
         self.focallength_entry.insert(0, '6.7')
         self.focallength_entry.pack(side=tk.TOP, padx=10, pady=0)
 
+        self.pixelsize_label=tk.Label(self, text='Pixel Size (microns)')
+        self.pixelsize_label.pack(side=tk.TOP, padx=10, pady=(10,0))
+        self.pixelsize_entry=tk.Entry(self)
+        self.pixelsize_entry.insert(0, '7.4')
+        self.pixelsize_entry.pack(side=tk.TOP, padx=10, pady=0)
+
+
         
         self.datetime_label=tk.Label(self, text='')
         self.datetime_label.pack(side=tk.TOP, padx=10, pady=10)
@@ -170,12 +175,12 @@ class ACSImageFrame(tk.Frame):
         self.dataArray = []
         self.imagesArray = []
         
-        self.controlframe=None
+        self.control_frame=None
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         
-        self.current_filepath='No file selected yet'
-        self.filepath_label=tk.Label(self, text='Filepath: '+self.current_filepath)
+        self.filepath='No file selected yet'
+        self.filepath_label=tk.Label(self, text='Filepath: '+self.filepath)
         self.filepath_label.pack(side=tk.TOP, padx=10, pady=10)
         
         self.current_framenum=0
@@ -194,42 +199,37 @@ class ACSImageFrame(tk.Frame):
         self.canvas.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
         self.canvas.draw()
         
-        self.imgFrameData=None
         self.im=None
         
-        
-        
-        self.num_framesprocessed=0
-        self.num_framesread=0
-        
     
-    def set_control_frame(self, controlframe):
-        self.controlframe=controlframe
-        return None
+    def set_control_frame(self, control_frame):
+        self.control_frame=control_frame
 
 
-    def thread_process_data(self):
-        threading.Thread(target=self.process_data_method).start()
-    
+    def plot_data(self, image):
+        self.a.clear()
+        self.im = self.a.imshow(image)
+        self.canvas.draw()
 
-    def process_data_method(self):
-        self.process_data=True
-        if(self.process_data):
-            self.status_label.config(text='Status: Calculating centroids...')
-            self.calculate_centroids()
-        if(self.process_data):
-            self.calculate_cn2()
-        # if(self.process_data):
-        #     self.status_label.config(text='Status: Plotting data...')
-        #     self.controller.frames[ACSPlotsFrame].plot_data()
-        #     self.controller.frames[ACSSlopeStructPlotFrame].set_slope_struct_functions(self.slope_struct_functions, self.r0_calculated)
-        #     self.controller.frames[ACSSlopeStructPlotFrame].plot_data()
-        if(self.process_data):
-            self.status_label.config(text='Status: Processing Complete')
-        else:
-            self.status_label.config(text='Status: Processing Cancelled')
-    
-    
+
+    def update_framenum(self, framenum):
+        self.current_framenum = framenum
+        self.framenum_label.config(text='Frame: '+str(self.current_framenum+1)+'/'+str(self.total_framenum))
+
+
+    def update_filepath(self, filepath):
+        self.filepath = filepath
+        self.filepath_label.config(text='Filepath: '+self.filepath)
+
+
+    def initialize_new_data(self, image, numframes, filepath):
+        self.plot_data(image)
+        self.total_framenum = numframes
+        self.update_framenum(self.current_framenum)
+        self.update_filepath(filepath)
+
+
+
     def cancel_data_processing(self):
         self.process_data=False
         self.read_data=False
@@ -310,3 +310,8 @@ class ACSPlotsFrame(tk.Frame):
             self.framenum+=1
             self.r0_framenum+=1
             self.plot_data()
+
+
+if __name__=='__main__':
+    app = ACSDataApp()
+    app.mainloop()
