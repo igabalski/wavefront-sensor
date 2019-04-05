@@ -239,12 +239,12 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     NOTE:
     This function is a generator which iterates over frames and yields in between frames.
     The intermediate yield values are None, and the final yield value is the list of outputs.
-    
+
     Proper use is:
     file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification)
     return_values = 0
-    for frame in process_file:
-        return_values = next(file_processor)
+    for frame in file_processor:
+        return_values = frame
         ...update gui code...
     r0_full, r0_individual, ssf, ssfx, ssfy = return values
     '''
