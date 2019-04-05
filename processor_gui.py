@@ -76,6 +76,34 @@ class ACSDataApp(tk.Tk):
         self.frames[ACSImageFrame].initialize_new_data(self.images_array[0], len(self.images_array), self.filepath)
 
 
+    def get_parameters(self):
+        control_frame = self.frames[ACSControlsFrame]
+        self.path_length = float(control_frame.path_length_entry.get())
+        self.aoi_size = int(control_frame.aoisize_entry.get())
+        self.focal_length = float(control_frame.focallength_entry.get())*1e-3
+        self.pixel_size = float(control_frame.pixelsize_entry.get())*1e-6
+        self.wavelength = float(control_frame.wavelength_entry.get())*1e-9
+        self.magnification = float(control_frame.magnification_entry.get())
+
+
+    def process_data(self):
+        image_frame = self.frames[ACSImageFrame]
+        plots_frame = self.frames[ACSPlotsFrame]
+
+        self.get_parameters()
+        file_processor = wfs.process_file(self.filepath, self.aoi_size, self.focal_length, self.pixel_size, self.wavelength, self.magnification)
+        for frame in file_processor:
+            return_values = frame
+            if(isinstance(return_values, list)):
+                aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
+                ...update gui with aoi locations...
+            elif(isinstance(return_values, tuple)):
+                ...update gui with 'fitting ssf data' message...
+            else:
+                ...update gui with frame number...
+        r0_full, r0_individual, ssf, ssfx, ssfy = return_values 
+
+
 
 
 class ACSControlsFrame(tk.Frame):
