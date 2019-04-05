@@ -204,7 +204,6 @@ def fit_ssf(ssf_array, aoi_size, pixel_size, magnification, fit_type='full'):
     d_sub = aoi_size*pixel_size*magnification
     def functional_form_full(r, r0):
         val = np.multiply(6.88/(d_sub**2)*(d_sub/r0)**(5/3)*1.32, np.add(np.divide(np.square(r),np.add(5.4,np.square(r))),np.multiply(0.557, np.power(r, 0.213))))
-        #print(val)
         return val
 
     def functional_form_individual(r, r0):
