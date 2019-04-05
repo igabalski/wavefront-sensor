@@ -72,10 +72,10 @@ def get_aoi_locations(images_array, aoi_size, threshold=0.2):
     maxfiltered_image=maximum_filter(summed_array, size=aoi_size)
     maxfiltered_image_reversed = maximum_filter(summed_array[::-1,::-1], size=aoi_size)
     local_maxima = np.array(((summed_array==maxfiltered_image)*(summed_array==maxfiltered_image_reversed[::-1,::-1])*(summed_array>0)), dtype=np.int32)
-    local_maxima[:,:int((aoi_size+1)/2)]=0
-    local_maxima[:,-int((aoi_size+1)/2):]=0
-    local_maxima[:int((aoi_size+1)/2),:]=0
-    local_maxima[-int((aoi_size+1)/2):,:]=0
+    local_maxima[:,:int((aoi_size+1)/2)] = 0
+    local_maxima[:,-int((aoi_size+1)/2):] = 0
+    local_maxima[:int((aoi_size+1)/2),:] = 0
+    local_maxima[-int((aoi_size+1)/2):,:] = 0
 
     
     (xcoords, ycoords) = np.where(local_maxima==1)
@@ -230,6 +230,7 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     # wavelength = wavelength in meters
     # magnification = magnification of telescope system as a raw number
     #Yields:
+    # (First) aoi_locations = a list of aoi location strings of the form 'x_topleft_corner,y_topleft_corner'
     # (Intermediate) framenum = index of frame that was just processed
     # (Final) r0_full = Fried parameter r0 calculated using full slope structure function method
     # (Final) r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
@@ -239,16 +240,21 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     '''
     NOTE:
     This function is a generator which iterates over frames and yields in between frames.
-    The intermediate yield values are the current frame index, and the final yield value is a tuple of the final outputs.
+    The first yield value is the list of aoi location coordinates, referenced to the top left corner of the aoi.
+    The intermediate yield values are the current frame index.
+    The final yield value is a tuple of the final outputs.
 
     Proper use is:
     file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification)
     for frame in file_processor:
         return_values = frame
-        if(not isinstance(return_values, tuple)):
-            ...update gui with frame number...
-        else:
+        if(isinstance(return_values, list)):
+            aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
+            ...update gui with aoi locations...
+        elif(isinstance(return_values, tuple)):
             ...update gui with 'fitting ssf data' message...
+        else:
+            ...update gui with frame number...
     r0_full, r0_individual, ssf, ssfx, ssfy = return values
     '''
 
@@ -258,6 +264,7 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
 
     images_array, time_list, version, bitdepth = read_file(filepath)
     aoi_locations, summed_array = get_aoi_locations(images_array, aoi_size)
+    yield aoi_locations
     references = calculate_references(summed_array, aoi_locations, aoi_size)
 
     try:
