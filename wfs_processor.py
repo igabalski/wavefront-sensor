@@ -255,7 +255,7 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
             ...update gui with 'fitting ssf data' message...
         else:
             ...update gui with frame number...
-    r0_full, r0_individual, ssf, ssfx, ssfy = return values
+    r0_full, r0_individual, ssf, ssfx, ssfy = return_values
     '''
 
     ssf_list = []
