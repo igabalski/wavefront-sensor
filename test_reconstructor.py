@@ -27,7 +27,7 @@ for aoi in aoi_locations:
 aoi_locations = wfs.sort_aois(gradients, aoi_size)
 
 
-sorted_aoi_locations = wfs.sort_aois(gradients, aoi_size)
+sorted_aoi_locations = wfs.sort_aois(gradients, aoi_size, buffer_size=2)
 A = wfs.build_reconstruction_matrix(sorted_aoi_locations, aoi_size)
 S = wfs.build_slope_vector(gradients, sorted_aoi_locations, aoi_size, pixel_size, magnification)
 wavefront = wfs.reconstruct_wavefront(A, S, sorted_aoi_locations, aoi_size)
