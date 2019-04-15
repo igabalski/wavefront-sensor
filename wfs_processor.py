@@ -5,6 +5,7 @@ from scipy.ndimage.measurements import center_of_mass
 from scipy.optimize import curve_fit
 from scipy.ndimage import maximum_filter
 from scipy.sparse.linalg import lsmr as iterative_solver
+from scipy.sparse.linalg import LinearOperator
 from itertools import combinations
 
 
@@ -225,7 +226,7 @@ def fit_ssf(ssf_array, aoi_size, pixel_size, magnification, fit_type='full'):
 
 
 
-def sort_aois(references, aoi_size, buffer_size=1):
+def sort_aois(references, aoi_size, buffer_size=3):
     #Inputs:
     # references = a dictionary of the form {'x_location,y_location':[x_centroid, y_centroid]} referenced from top left of aois, representing reference centroids
     # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
@@ -344,15 +345,15 @@ def build_reconstruction_matrix(sorted_aoi_locations, aoi_size):
     num_aois = len(sorted_aoi_locations)
     num_equations = num_aois+1
     
-    A = np.zeros((num_equations, num_aois))
+    A = np.zeros((num_equations, num_aois), dtype=np.float64)
     A[-1] = np.ones((num_aois))
     for i, aoi in enumerate(sorted_aoi_locations):
         adjacent_aois = sorted_aoi_locations[get_adjacent_aois(aoi, sorted_aoi_locations, aoi_size)]
         num_adjacent_aois = len(adjacent_aois)
-        equation = A[i]
-        equation[get_current_aoi(aoi, sorted_aoi_locations)]=-1
-        equation[get_adjacent_aois(aoi, sorted_aoi_locations, aoi_size)]=1/num_adjacent_aois
-    
+        A[i, get_current_aoi(aoi, sorted_aoi_locations)]=-1
+        if(num_adjacent_aois!=0):
+            A[i, get_adjacent_aois(aoi, sorted_aoi_locations, aoi_size)]=1/num_adjacent_aois
+
     return A
 
 
@@ -375,21 +376,22 @@ def build_slope_vector(gradients, sorted_aoi_locations, aoi_size, pixel_size, ma
         adjacent_aois = sorted_aoi_locations[get_adjacent_aois(aoi, sorted_aoi_locations, aoi_size)]
         num_adjacent_aois = len(adjacent_aois)
         
-        current_gradient = gradients[to_string(aoi)]
-        for adjacent_aoi in adjacent_aois:
-            adjacent_gradient = gradients[to_string(adjacent_aoi)]
-            signature = get_aoi_signature(aoi, adjacent_aoi)
-            if(signature[1]==0):
-                avg_slope_val = signature[0]*aoi_separation*(adjacent_gradient[0]+current_gradient[0])/2
-            elif(signature[0]==0):
-                avg_slope_val = signature[1]*aoi_separation*(adjacent_gradient[1]+current_gradient[1])/2
-            S[i] += avg_slope_val
-        S[i] /= num_adjacent_aois
+        if(num_adjacent_aois!=0):
+            current_gradient = gradients[to_string(aoi)]
+            for adjacent_aoi in adjacent_aois:
+                adjacent_gradient = gradients[to_string(adjacent_aoi)]
+                signature = get_aoi_signature(aoi, adjacent_aoi)
+                if(signature[1]==0):
+                    avg_slope_val = signature[0]*aoi_separation*(adjacent_gradient[0]+current_gradient[0])/2
+                elif(signature[0]==0):
+                    avg_slope_val = signature[1]*aoi_separation*(adjacent_gradient[1]+current_gradient[1])/2
+                S[i] += avg_slope_val
+            S[i] /= num_adjacent_aois
     
     return S
 
 
-def reconstruct_wavefront(A, S, sorted_aoi_locations, aoi_size, buffer_size=2):
+def reconstruct_wavefront(A, S, sorted_aoi_locations, aoi_size, buffer_size=3):
     #Inputs:
     # A = Southwell reconstruction matrix, shape is (num_equations, num_aois)
     # S = Southwell slope vector, shape is (num_equations)
@@ -426,6 +428,8 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     # calculate_turbulence = whether or not to calculate turbulence parameters with slope structure function methods
     # reconstruct = whether or not to reconstruct wavefront using Southwell reconstructor
     #Yields:
+    # (Always) status = one of 'aoi locations', 'framenum', 'turbulence', 'wavefront', 'both'
+    # NOTE: indicates which step of processing, and what is being returned at each yield
     # (First) aoi_locations = a list of aoi location strings of the form 'x_topleft_corner,y_topleft_corner'
     # (Intermediate) framenum = index of frame that was just processed
     # (Final) r0_full = Fried parameter r0 calculated using full slope structure function method
@@ -442,22 +446,23 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     The final yield value is a tuple of the final outputs.
 
     Proper use is:
-    file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification)
+    file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification, calculate_turbulence=ct, reconstruct=r)
     for frame in file_processor:
-        return_values = frame
-        if(isinstance(return_values, list)):
+        status, return_values = frame
+        if(status=='aoi locations'):
             aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
             ...update gui with aoi locations...
-        elif(isinstance(return_values, tuple)):
-            ...update gui with 'fitting ssf data' message...
-        else:
+        elif(status=='framenum'):
             ...update gui with frame number...
+        else:
+            ...update gui with processed information...
     (list, of, desired, return, values) = return_values
     '''
 
     images_array, time_list, version, bitdepth = read_file(filepath)
     aoi_locations, summed_array = get_aoi_locations(images_array, aoi_size)
-    yield aoi_locations
+    status = 'aoi locations'
+    yield status, aoi_locations
     references = calculate_references(summed_array, aoi_locations, aoi_size)
     if(calculate_turbulence):
         ssf_list = []
@@ -483,9 +488,10 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
                 ssfy_list.append(ssfy)
             if(reconstruct):
                 S = build_slope_vector(gradients, sorted_aoi_locations, aoi_size, pixel_size, magnification)
-                wavefront = reconstruct_wavefront(gradients, aoi_size)
-                wavefronts_listappend(wavefront)
-            yield framenum
+                wavefront = reconstruct_wavefront(A, S, sorted_aoi_locations, aoi_size)
+                wavefronts_list.append(wavefront)
+            status = 'framenum'
+            yield status, framenum
             framenum += 1
         
         return_list = []
@@ -499,10 +505,17 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
             r0_full = fit_ssf(ssf, aoi_size, pixel_size, magnification, fit_type='full')
             r0_individual = np.mean((fit_ssf(ssfx, aoi_size, pixel_size, magnification, fit_type='individual'), fit_ssf(ssfy, aoi_size, pixel_size, magnification, fit_type='individual')))
             
-            return_list = return_list + (r0_full, r0_individual, ssf, ssfx, ssfy)
+            return_list = return_list + list((r0_full, r0_individual, ssf, ssfx, ssfy))
+            status = 'turbulence'
         
         if(reconstruct):
-            return_list = return_list + wavefronts_list
+            return_list = return_list + list(wavefronts_list)
+            status = 'wavefront'
+
+        if(calculate_turbulence and reconstruct):
+            status = 'both'
+
+        yield status, return_list
     
     except StopIteration:
         pass
