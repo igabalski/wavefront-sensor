@@ -5,6 +5,7 @@ from scipy.ndimage.measurements import center_of_mass
 from scipy.optimize import curve_fit
 from scipy.ndimage import maximum_filter
 from scipy.sparse.linalg import lsmr as iterative_solver
+from scipy.sparse.linalg import LinearOperator
 from itertools import combinations
 
 
@@ -344,16 +345,15 @@ def build_reconstruction_matrix(sorted_aoi_locations, aoi_size):
     num_aois = len(sorted_aoi_locations)
     num_equations = num_aois+1
     
-    A = np.zeros((num_equations, num_aois))
+    A = np.zeros((num_equations, num_aois), dtype=np.float64)
     A[-1] = np.ones((num_aois))
     for i, aoi in enumerate(sorted_aoi_locations):
         adjacent_aois = sorted_aoi_locations[get_adjacent_aois(aoi, sorted_aoi_locations, aoi_size)]
         num_adjacent_aois = len(adjacent_aois)
-        equation = A[i]
-        equation[get_current_aoi(aoi, sorted_aoi_locations)]=-1
+        A[i, get_current_aoi(aoi, sorted_aoi_locations)]=-1
         if(num_adjacent_aois!=0):
-            equation[get_adjacent_aois(aoi, sorted_aoi_locations, aoi_size)]=1/num_adjacent_aois
-    
+            A[i, get_adjacent_aois(aoi, sorted_aoi_locations, aoi_size)]=1/num_adjacent_aois
+
     return A
 
 
@@ -488,8 +488,8 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
                 ssfy_list.append(ssfy)
             if(reconstruct):
                 S = build_slope_vector(gradients, sorted_aoi_locations, aoi_size, pixel_size, magnification)
-                wavefront = reconstruct_wavefront(gradients, aoi_size)
-                wavefronts_listappend(wavefront)
+                wavefront = reconstruct_wavefront(A, S, sorted_aoi_locations, aoi_size)
+                wavefronts_list.append(wavefront)
             status = 'framenum'
             yield status, framenum
             framenum += 1
