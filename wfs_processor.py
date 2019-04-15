@@ -426,6 +426,8 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     # calculate_turbulence = whether or not to calculate turbulence parameters with slope structure function methods
     # reconstruct = whether or not to reconstruct wavefront using Southwell reconstructor
     #Yields:
+    # (Always) status = one of 'aoi locations', 'framenum', 'turbulence', 'wavefront', 'both'
+    # NOTE: indicates which step of processing, and what is being returned at each yield
     # (First) aoi_locations = a list of aoi location strings of the form 'x_topleft_corner,y_topleft_corner'
     # (Intermediate) framenum = index of frame that was just processed
     # (Final) r0_full = Fried parameter r0 calculated using full slope structure function method
@@ -442,22 +444,23 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     The final yield value is a tuple of the final outputs.
 
     Proper use is:
-    file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification)
+    file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification, calculate_turbulence=ct, reconstruct=r)
     for frame in file_processor:
-        return_values = frame
-        if(isinstance(return_values, list)):
+        status, return_values = frame
+        if(status=='aoi locations'):
             aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
             ...update gui with aoi locations...
-        elif(isinstance(return_values, tuple)):
-            ...update gui with 'fitting ssf data' message...
-        else:
+        elif(status=='framenum'):
             ...update gui with frame number...
+        else:
+            ...update gui with processed information...
     (list, of, desired, return, values) = return_values
     '''
 
     images_array, time_list, version, bitdepth = read_file(filepath)
     aoi_locations, summed_array = get_aoi_locations(images_array, aoi_size)
-    yield aoi_locations
+    status = 'aoi locations'
+    yield status, aoi_locations
     references = calculate_references(summed_array, aoi_locations, aoi_size)
     if(calculate_turbulence):
         ssf_list = []
@@ -485,7 +488,8 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
                 S = build_slope_vector(gradients, sorted_aoi_locations, aoi_size, pixel_size, magnification)
                 wavefront = reconstruct_wavefront(gradients, aoi_size)
                 wavefronts_listappend(wavefront)
-            yield framenum
+            status = 'framenum'
+            yield status, framenum
             framenum += 1
         
         return_list = []
@@ -499,10 +503,17 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
             r0_full = fit_ssf(ssf, aoi_size, pixel_size, magnification, fit_type='full')
             r0_individual = np.mean((fit_ssf(ssfx, aoi_size, pixel_size, magnification, fit_type='individual'), fit_ssf(ssfy, aoi_size, pixel_size, magnification, fit_type='individual')))
             
-            return_list = return_list + (r0_full, r0_individual, ssf, ssfx, ssfy)
+            return_list = return_list + list((r0_full, r0_individual, ssf, ssfx, ssfy))
+            status = 'turbulence'
         
         if(reconstruct):
-            return_list = return_list + wavefronts_list
+            return_list = return_list + list(wavefronts_list)
+            status = 'wavefront'
+
+        if(calculate_turbulence and reconstruct):
+            status = 'both'
+
+        yield status, return_list
     
     except StopIteration:
         pass
