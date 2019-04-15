@@ -86,6 +86,8 @@ class ACSDataApp(tk.Tk):
         self.pixel_size = float(control_frame.pixelsize_entry.get())*1e-6
         self.wavelength = float(control_frame.wavelength_entry.get())*1e-9
         self.magnification = float(control_frame.magnification_entry.get())
+        self.calculate_turbulence = bool(control_frame.calculate_turbulence.get())
+        self.reconstruct = bool(control_frame.reconstruct_wavefront.get())
 
 
     def process_data(self):
@@ -94,26 +96,37 @@ class ACSDataApp(tk.Tk):
         self.continue_processing = True
 
         self.get_parameters()
-        file_processor = wfs.process_file(self.filepath, self.aoi_size, self.focal_length, self.pixel_size, self.wavelength, self.magnification)
+        file_processor = wfs.process_file(self.filepath, self.aoi_size, self.focal_length, self.pixel_size, self.wavelength, 
+            self.magnification, calculate_turbulence=self.calculate_turbulence, reconstruct=self.reconstruct)
         for frame in file_processor:
-            return_values = frame
-            if(isinstance(return_values, list)):
+            status, return_values = frame
+            if(status=='aoi locations'):
                 aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
                 summed_array = np.sum(self.images_array, axis=0)
                 image_frame.status_label.config(text='Status: Finding reference spots...')
                 image_frame.add_aoi_locations(aoi_locations, self.aoi_size)
                 image_frame.plot_data(summed_array)
-            elif(isinstance(return_values, tuple)):
-                self.r0_full, self.r0_individual, self.ssf, self.ssfx, self.ssfy = return_values 
-                self.frames[ACSPlotsFrame].set_slope_struct_functions(self.ssf, self.ssfx, self.ssfy, self.r0_full, self.r0_individual)
-                self.frames[ACSPlotsFrame].plot_data()
-                image_frame.status_label.config(text='Status: Processing Complete')
-                print(self.r0_full, self.r0_individual)
-            else:
+            elif(status=='framenum'):
                 image_frame.status_label.config(text='Status: Processing frames...')
                 image_frame.update_framenum(return_values)
+            else:
+                if(status=='turbulence'):
+                    self.r0_full, self.r0_individual, self.ssf, self.ssfx, self.ssfy = return_values 
+                    self.frames[ACSPlotsFrame].set_slope_struct_functions(self.ssf, self.ssfx, self.ssfy, self.r0_full, self.r0_individual)
+                    self.frames[ACSPlotsFrame].plot_data()
+                elif(status=='wavefront'):
+                    self.wavefronts_list = return_values
+                    print('reconstructed wavefronts')
+                elif(status=='both'):
+                    self.r0_full, self.r0_individual, self.ssf, self.ssfx, self.ssfy, self.wavefronts_list = return_values
+                    self.frames[ACSPlotsFrame].set_slope_struct_functions(self.ssf, self.ssfx, self.ssfy, self.r0_full, self.r0_individual)
+                    self.frames[ACSPlotsFrame].plot_data()
+                    print('both')
+            
+            
             if(not self.continue_processing):
                 break
+        image_frame.status_label.config(text='Status: Processing Complete')
 
     def thread_process_data(self):
         threading.Thread(target=self.process_data).start()
@@ -136,6 +149,7 @@ class ACSControlsFrame(tk.Frame):
         self.plots_frame=plotsframe
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
+        self.current_image='Data'
         
         self.open_file_button=tk.Button(self, text='Open File', 
                                         command = self.controller.open_file, height=2, width=20)
@@ -152,16 +166,19 @@ class ACSControlsFrame(tk.Frame):
         self.cancel_data_processing_button.pack(side=tk.TOP, padx=30, pady=10)
         
         
-        self.show_image_button=tk.Button(self, text='Show Data', 
-                                        command= lambda: self.controller.show_frame(ACSImageFrame), height=2, width=20)
-        self.show_image_button.pack(side=tk.TOP, padx=30, pady=10)
+        self.toggle_image_button=tk.Button(self, text='Show Plots', 
+                                        command= lambda: self.toggle_image(), height=2, width=20)
+        self.toggle_image_button.pack(side=tk.TOP, padx=30, pady=10)
 
-        
-        self.show_plots_button=tk.Button(self, text='Show Plots', 
-                                        command= lambda: self.controller.show_frame(ACSPlotsFrame), height=2, width=20)
-        self.show_plots_button.pack(side=tk.TOP, padx=30, pady=10)
+        self.calculate_turbulence = tk.BooleanVar()
+        self.calculate_turbulence.set(False)
+        self.calculate_turbulence_checkbutton=tk.Checkbutton(self, text='Calculate Turbulence', variable=self.calculate_turbulence)
+        self.calculate_turbulence_checkbutton.pack(side=tk.TOP, padx=10, pady=(10,0))
 
-        
+        self.reconstruct_wavefront = tk.BooleanVar()
+        self.reconstruct_wavefront.set(False)
+        self.reconstruct_wavefront_checkbutton=tk.Checkbutton(self, text='Reconstruct Wavefront', variable=self.reconstruct_wavefront)
+        self.reconstruct_wavefront_checkbutton.pack(side=tk.TOP, padx=10, pady=(10,0))
 
         
         self.path_length_label=tk.Label(self, text='Path Length (meters)')
@@ -214,6 +231,17 @@ class ACSControlsFrame(tk.Frame):
         
         self.bitdepth_label=tk.Label(self, text='')
         self.bitdepth_label.pack(side=tk.TOP, padx=10, pady=10)
+
+
+    def toggle_image(self):
+        if(self.current_image=='Data'):
+            self.current_image='Plots'
+            self.toggle_image_button.config(text='Show Data')
+            self.controller.show_frame(ACSPlotsFrame)
+        elif(self.current_image=='Plots'):
+            self.current_image='Data'
+            self.toggle_image_button.config(text='Show Plots')
+            self.controller.show_frame(ACSImageFrame)
 
 
 
@@ -360,7 +388,6 @@ class ACSPlotsFrame(tk.Frame):
             functional_form = functional_form_full
             ssf = self.ssf
             r = np.linspace(0,ssf[-1,0],1000)
-            print(ssf)
             self.a.plot(ssf[:,0], ssf[:,1], 'r--', label='Data')
             self.a.plot(r, functional_form(r, r0), 'r-', label='Fit')
             self.a.legend(prop={'size':15})
