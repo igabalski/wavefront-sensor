@@ -8,6 +8,7 @@ from scipy.sparse.linalg import lsmr as iterative_solver
 from scipy.sparse.linalg import LinearOperator
 from itertools import combinations
 
+import matplotlib.pyplot as plt
 
 def read_file(filepath):
     #Inputs:
@@ -224,6 +225,12 @@ def fit_ssf(ssf_array, aoi_size, pixel_size, magnification, fit_type='full'):
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+# def infer_aoi_size(aoi_locations):
+#     #Inputs:
+#     # aoi_locations = numpy array of all aoi locations
+#     #Returns:
+#     # (aoi_size_x, y) = a tuple
+
 
 
 def sort_aois(references, aoi_size, buffer_size=5):
@@ -251,6 +258,7 @@ def sort_aois(references, aoi_size, buffer_size=5):
     xmin, xmax = np.amin(sorted_aoi_locations[:,0]), np.amax(sorted_aoi_locations[:,0])
     ymin, ymax = np.amin(sorted_aoi_locations[:,1]), np.amax(sorted_aoi_locations[:,1])
     print(xmin, xmax, ymin, ymax)
+
 
     return sorted_aoi_locations
 
@@ -525,3 +533,54 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     
     except StopIteration:
         pass
+
+
+
+# CURRENT STATUS: unsure of why x frequency calculation is off. Array values seem to be spaced properly but histogram is not plotting properly
+def run():
+    filepath = '/home/ian/Desktop/workspace/acs/data2018_08_28_16_08_25/data2018_08_28_16_08_25.dat'
+    aoi_size = 20
+    focal_length = 6.7e-3
+    pixel_size = 7.4e-6
+    wavelength = 640e-9
+    magnification = 40
+    calculate_turbulence=False
+    reconstruct=True
+
+    file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification, calculate_turbulence=calculate_turbulence, reconstruct=reconstruct)
+    
+    status, return_values = next(file_processor)
+    if(status=='aoi locations'):
+        aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
+        pixel_locations = aoi_locations[:,0]
+        pixel_locations = pixel_locations-np.amin(pixel_locations)
+        xmin, xmax = np.amin(pixel_locations), np.amax(pixel_locations)
+        for item in np.sort(pixel_locations):
+            print(item)
+        hist, bin_edges = np.histogram(pixel_locations, bins=int(xmax-xmin))
+        print(bin_edges[1]-bin_edges[0])
+        hist = hist-np.mean(hist)
+        plt.figure()
+        #plt.hist(pixel_locations, bins=640)
+        plt.plot(bin_edges[:-1],hist)
+        plt.xticks(range(0,len(hist), 20))
+        plt.show()
+        fft = np.fft.fft(hist)
+        freq = np.fft.fftfreq(len(fft), d=1/len(hist))
+        plt.figure()
+        plt.plot(freq, np.absolute(fft))
+        plt.xticks(range(0,len(fft), 20))
+        plt.show()
+        freqval = np.abs(freq[np.argmax(fft)])
+        print(freqval)
+    elif(status=='framenum'):
+        print(return_values)
+    else:
+        print('Done')
+    wavefronts_list = return_values
+
+
+
+
+if __name__=='__main__':
+    run()
