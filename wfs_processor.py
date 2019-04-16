@@ -226,7 +226,7 @@ def fit_ssf(ssf_array, aoi_size, pixel_size, magnification, fit_type='full'):
 
 
 
-def sort_aois(references, aoi_size, buffer_size=3):
+def sort_aois(references, aoi_size, buffer_size=5):
     #Inputs:
     # references = a dictionary of the form {'x_location,y_location':[x_centroid, y_centroid]} referenced from top left of aois, representing reference centroids
     # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
@@ -238,14 +238,20 @@ def sort_aois(references, aoi_size, buffer_size=3):
     
     xmin, xmax = np.amin(aoi_locations[:,0]), np.amax(aoi_locations[:,0])
     ymin, ymax = np.amin(aoi_locations[:,1]), np.amax(aoi_locations[:,1])
+    print(xmin, xmax, ymin, ymax)
     sorted_list = []
     for y in np.arange(ymin, ymax+1, aoi_size):
         row = np.array(aoi_locations[np.logical_and(aoi_locations[:,1]+buffer_size>=y, aoi_locations[:,1]-buffer_size<=y)])
         sorted_row = row[np.argsort(row[:,0], axis=0)]
         sorted_list.append(sorted_row)
+        print(y, len(sorted_row))
     
     sorted_aoi_locations = np.array([xy_tuple for row in sorted_list for xy_tuple in row])
     
+    xmin, xmax = np.amin(sorted_aoi_locations[:,0]), np.amax(sorted_aoi_locations[:,0])
+    ymin, ymax = np.amin(sorted_aoi_locations[:,1]), np.amax(sorted_aoi_locations[:,1])
+    print(xmin, xmax, ymin, ymax)
+
     return sorted_aoi_locations
 
 
