@@ -536,9 +536,9 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
 
 
 
-# CURRENT STATUS: unsure of why x frequency calculation is off. Array values seem to be spaced properly but histogram is not plotting properly
+# CURRENT STATUS: able to get proper floating point pixel spacings. Now just iterate rows with floating point, and cast to integer after multiplying by row index.
 def run():
-    filepath = '/home/ian/Desktop/workspace/acs/data2018_08_28_16_08_25/data2018_08_28_16_08_25.dat'
+    filepath = '/home/ian/Desktop/workspace/example_acs_processing/data2018_08_28_16_11_29/data2018_08_28_16_11_29.dat'
     aoi_size = 20
     focal_length = 6.7e-3
     pixel_size = 7.4e-6
@@ -552,27 +552,38 @@ def run():
     status, return_values = next(file_processor)
     if(status=='aoi locations'):
         aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
-        pixel_locations = aoi_locations[:,0]
+        pixel_locations = np.sort(aoi_locations[:,0])
         pixel_locations = pixel_locations-np.amin(pixel_locations)
         xmin, xmax = np.amin(pixel_locations), np.amax(pixel_locations)
-        for item in np.sort(pixel_locations):
-            print(item)
+        print(xmin, xmax)
+        # for item in np.sort(pixel_locations):
+        #     print(item)
         hist, bin_edges = np.histogram(pixel_locations, bins=int(xmax-xmin))
-        print(bin_edges[1]-bin_edges[0])
+        hist[hist>1]=1
+        hist[hist<1]=0
         hist = hist-np.mean(hist)
+        
         plt.figure()
         #plt.hist(pixel_locations, bins=640)
         plt.plot(bin_edges[:-1],hist)
         plt.xticks(range(0,len(hist), 20))
         plt.show()
+
+
         fft = np.fft.fft(hist)
-        freq = np.fft.fftfreq(len(fft), d=1/len(hist))
+        print('Vals: ', len(hist), 1/len(hist))
+        freq = np.fft.fftfreq(len(hist), d=1)
         plt.figure()
+        # plt.plot(freq, np.real(fft))
+        # plt.plot(freq, np.imag(fft))
         plt.plot(freq, np.absolute(fft))
-        plt.xticks(range(0,len(fft), 20))
+        minfreq, maxfreq = int(20*int(np.amin(freq)/20)), int(20*int(np.amax(freq)/20))
+        plt.xticks(range(minfreq, maxfreq, 20))
         plt.show()
+
+
         freqval = np.abs(freq[np.argmax(fft)])
-        print(freqval)
+        print(1/freqval)
     elif(status=='framenum'):
         print(return_values)
     else:
