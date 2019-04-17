@@ -5,7 +5,6 @@ from scipy.ndimage.measurements import center_of_mass
 from scipy.optimize import curve_fit
 from scipy.ndimage import maximum_filter
 from scipy.sparse.linalg import lsmr as iterative_solver
-from scipy.sparse.linalg import LinearOperator
 from itertools import combinations
 
 
