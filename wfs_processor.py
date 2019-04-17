@@ -8,6 +8,7 @@ from scipy.sparse.linalg import lsmr as iterative_solver
 from scipy.sparse.linalg import LinearOperator
 from itertools import combinations
 
+import matplotlib.pyplot as plt
 
 def read_file(filepath):
     #Inputs:
@@ -224,28 +225,68 @@ def fit_ssf(ssf_array, aoi_size, pixel_size, magnification, fit_type='full'):
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-
-
-def sort_aois(references, aoi_size, buffer_size=3):
+def infer_aoi_size(aoi_locations):
     #Inputs:
-    # references = a dictionary of the form {'x_location,y_location':[x_centroid, y_centroid]} referenced from top left of aois, representing reference centroids
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
+    # aoi_locations = unsorted aoi locations; Either a dict of the form {'x,y': [x_centroid, y_centroid]'}, or a numpy array of the form [x,y]
+    #Returns:
+    # aoi_size_x, aoi_size_y = floats indicating inferred aoi separations in x and y directions
+
+    if(isinstance(aoi_locations, dict)):
+        aoi_locations = np.array([[int(x) for x in aoi.split(',')] for aoi in aoi_locations])
+
+
+    x_locations, y_locations = aoi_locations[:,0], aoi_locations[:,1]
+    xmin, xmax, ymin, ymax = np.amin(x_locations), np.amax(x_locations), np.amin(y_locations), np.amax(y_locations)
+
+    x_hist, x_bin_edges = np.histogram(x_locations, bins=int(xmax-xmin))
+    y_hist, y_bin_edges = np.histogram(y_locations, bins=int(ymax-ymin))
+    
+    x_hist = x_hist-np.mean(x_hist)
+    y_hist = y_hist-np.mean(y_hist)
+
+    x_fft = np.fft.fft(x_hist)
+    y_fft = np.fft.fft(y_hist)
+
+    x_freq = np.fft.fftfreq(len(x_hist), d=1)
+    y_freq = np.fft.fftfreq(len(y_hist), d=1)
+
+
+    aoi_size_x = 1/np.abs(x_freq[np.argmax(x_fft)])
+    aoi_size_y = 1/np.abs(y_freq[np.argmax(y_fft)])
+    
+    return aoi_size_x, aoi_size_y
+
+
+
+def sort_aois(aoi_locations, aoi_size, buffer_size=3):
+    #Inputs:
+    # aoi_locations = unsorted aoi locations; Either a dict of the form {'x,y': [x_centroid, y_centroid]'}, or a numpy array of the form [x,y]
+    # aoi_size = the size of a wavefront sensor subaperture in pixels ; If single value, represents square aoi. If tuple, represents (aoi_size_x, aoi_size_y)
     # buffer_size = pixel buffer in each direction to allow for slightly irregular spacing of aois
     #Returns:
     # sorted_aoi_locations = numpy array of sorted aoi_locations list; array iterates top left to bottom right, row by row
     
-    aoi_locations = np.array([[int(x) for x in aoi.split(',')] for aoi in references])
-    
-    xmin, xmax = np.amin(aoi_locations[:,0]), np.amax(aoi_locations[:,0])
+    if(isinstance(aoi_locations, dict)):
+        aoi_locations = np.array([[int(x) for x in aoi.split(',')] for aoi in aoi_locations])
+
+
+
+    if(isinstance(aoi_size, tuple)):
+        aoi_size_x, aoi_size_y = aoi_size
+    else:
+        aoi_size_x = aoi_size
+        aoi_size_y = aoi_size
+
     ymin, ymax = np.amin(aoi_locations[:,1]), np.amax(aoi_locations[:,1])
+    
     sorted_list = []
-    for y in np.arange(ymin, ymax+1, aoi_size):
+    for y in np.arange(ymin, ymax+1, aoi_size_y):
         row = np.array(aoi_locations[np.logical_and(aoi_locations[:,1]+buffer_size>=y, aoi_locations[:,1]-buffer_size<=y)])
         sorted_row = row[np.argsort(row[:,0], axis=0)]
         sorted_list.append(sorted_row)
     
     sorted_aoi_locations = np.array([xy_tuple for row in sorted_list for xy_tuple in row])
-    
+
     return sorted_aoi_locations
 
 
@@ -428,16 +469,12 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     # calculate_turbulence = whether or not to calculate turbulence parameters with slope structure function methods
     # reconstruct = whether or not to reconstruct wavefront using Southwell reconstructor
     #Yields:
-    # (Always) status = one of 'aoi locations', 'framenum', 'turbulence', 'wavefront', 'both'
-    # NOTE: indicates which step of processing, and what is being returned at each yield
+    # (Always) status = one of 'aoi locations', 'framenum', 'turbulence', 'wavefront', 'both', indicates what is being returned at each yield
     # (First) aoi_locations = a list of aoi location strings of the form 'x_topleft_corner,y_topleft_corner'
     # (Intermediate) framenum = index of frame that was just processed
-    # (Final) r0_full = Fried parameter r0 calculated using full slope structure function method
-    # (Final) r0_individual = Fried parameter calculated using individual slope structure functions separately and averaging results
-    # (Final) ssf = full slope structure function numpy array of the form [r, ssf(r)] where r is measured in aois
-    # (Final) ssfx = x slope structure function numpy array of the form [r, ssfx(r)] where r is measured in aois
-    # (Final) ssfy = fy slope structure function numpy array of the form [r, ssfy(r)] where r is measured in aois
-    # (Final) wavefronts_list = list of wavefront images
+    # (Final) turbulence_outputs = list of turbulence parameters and slope structure functions (possibly empty if turbulence not calculated)
+    # (Final) wavefronts_list = list of reconstructed wavefront images (possibly empty if wavefront not reconstructed)
+
     '''
     NOTE:
     This function is a generator which iterates over frames and yields in between frames.
@@ -456,7 +493,7 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
             ...update gui with frame number...
         else:
             ...update gui with processed information...
-    (list, of, desired, return, values) = return_values
+    turbulence_outputs, wavefronts = return_values
     '''
 
     images_array, time_list, version, bitdepth = read_file(filepath)
@@ -464,14 +501,14 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     status = 'aoi locations'
     yield status, aoi_locations
     references = calculate_references(summed_array, aoi_locations, aoi_size)
-    if(calculate_turbulence):
-        ssf_list = []
-        ssfx_list = []
-        ssfy_list = []
-    if(reconstruct):
-        wavefronts_list = []
-        sorted_aoi_locations = sort_aois(references, aoi_size)
-        A = build_reconstruction_matrix(sorted_aoi_locations, aoi_size)
+    ssf_list = []
+    ssfx_list = []
+    ssfy_list = []
+    turbulence_outputs = []
+    wavefronts_list = []
+    aoi_size_tuple = infer_aoi_size(references)
+    sorted_aoi_locations = sort_aois(references, aoi_size_tuple)
+    A = build_reconstruction_matrix(sorted_aoi_locations, aoi_size)
 
     try:
         framenum = 0
@@ -493,8 +530,8 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
             status = 'framenum'
             yield status, framenum
             framenum += 1
-        
-        return_list = []
+
+        return_values = []
         
         if(calculate_turbulence):
             ssf_list, ssfx_list, ssfy_list = np.array(ssf_list), np.array(ssfx_list), np.array(ssfy_list)
@@ -505,17 +542,45 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
             r0_full = fit_ssf(ssf, aoi_size, pixel_size, magnification, fit_type='full')
             r0_individual = np.mean((fit_ssf(ssfx, aoi_size, pixel_size, magnification, fit_type='individual'), fit_ssf(ssfy, aoi_size, pixel_size, magnification, fit_type='individual')))
             
-            return_list = return_list + list((r0_full, r0_individual, ssf, ssfx, ssfy))
+            turbulence_outputs = (r0_full, r0_individual, ssf, ssfx, ssfy)
             status = 'turbulence'
         
         if(reconstruct):
-            return_list = return_list + list(wavefronts_list)
             status = 'wavefront'
 
         if(calculate_turbulence and reconstruct):
             status = 'both'
 
-        yield status, return_list
+        return_values.append(turbulence_outputs)
+        return_values.append(wavefronts_list)
+
+        yield status, return_values
     
     except StopIteration:
         pass
+
+
+
+def run():
+    filepath = '/home/ian/Desktop/workspace/example_acs_processing/data2018_08_28_16_11_29/data2018_08_28_16_11_29.dat'
+    aoi_size = 20
+    focal_length = 6.7e-3
+    pixel_size = 7.4e-6
+    wavelength = 640e-9
+    magnification = 40
+    calculate_turbulence=False
+    reconstruct=True
+
+    file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification, calculate_turbulence=calculate_turbulence, reconstruct=reconstruct)
+    
+    status, return_values = next(file_processor)
+    if(status=='aoi locations'):
+        aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
+        aoi_size = infer_aoi_size(aoi_locations)
+        sorted_aoi_locations = sort_aois(aoi_locations, aoi_size)
+
+
+
+
+if __name__=='__main__':
+    run()
