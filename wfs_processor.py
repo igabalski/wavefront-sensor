@@ -8,7 +8,6 @@ from scipy.sparse.linalg import lsmr as iterative_solver
 from scipy.sparse.linalg import LinearOperator
 from itertools import combinations
 
-import matplotlib.pyplot as plt
 
 def read_file(filepath):
     #Inputs:
