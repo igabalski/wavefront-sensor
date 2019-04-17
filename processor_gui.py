@@ -68,6 +68,8 @@ class ACSDataApp(tk.Tk):
 		self.geometry('1250x750')
 
 		self.filepath = ''
+		self.calculate_turbulence = False
+		self.reconstruct = False
 
 	
 	def show_frame(self, cont):
@@ -123,16 +125,18 @@ class ACSDataApp(tk.Tk):
 				image_frame.status_label.config(text='Status: Processing frames...')
 				image_frame.update_framenum(return_values)
 			else:
+				turbulence_outputs, wavefronts = return_values
 				if(status=='turbulence'):
-					self.r0_full, self.r0_individual, self.ssf, self.ssfx, self.ssfy = return_values 
+					self.r0_full, self.r0_individual, self.ssf, self.ssfx, self.ssfy = turbulence_outputs
 					self.frames[ACSPlotsFrame].set_slope_struct_functions(self.ssf, self.ssfx, self.ssfy, self.r0_full, self.r0_individual)
 					self.frames[ACSPlotsFrame].plot_data()
 				elif(status=='wavefront'):
-					self.wavefronts_list = return_values
+					self.wavefronts_list = wavefronts
 					self.frames[ACSWavefrontFrame].initialize_new_data(self.wavefronts_list)
 					self.frames[ACSWavefrontFrame].plot_data()
 				elif(status=='both'):
-					self.r0_full, self.r0_individual, self.ssf, self.ssfx, self.ssfy, self.wavefronts_list = return_values
+					self.r0_full, self.r0_individual, self.ssf, self.ssfx, self.ssfy = turbulence_outputs
+					self.wavefronts_list = wavefronts
 					self.frames[ACSPlotsFrame].set_slope_struct_functions(self.ssf, self.ssfx, self.ssfy, self.r0_full, self.r0_individual)
 					self.frames[ACSPlotsFrame].plot_data()
 					self.frames[ACSWavefrontFrame].initialize_new_data(self.wavefronts_list)
@@ -181,7 +185,7 @@ class ACSControlsFrame(tk.Frame):
 		self.cancel_data_processing_button.pack(side=tk.TOP, padx=30, pady=10)
 		
 		
-		self.toggle_image_button=tk.Button(self, text='Show Plots', 
+		self.toggle_image_button=tk.Button(self, text='Toggle Plots', 
 										command= lambda: self.toggle_image(), height=2, width=20)
 		self.toggle_image_button.pack(side=tk.TOP, padx=30, pady=10)
 
@@ -250,16 +254,21 @@ class ACSControlsFrame(tk.Frame):
 
 	def toggle_image(self):
 		if(self.current_image=='Data'):
-			self.current_image='Plots'
-			self.toggle_image_button.config(text='Show Wavefront')
-			self.controller.show_frame(ACSPlotsFrame)
+			if(self.controller.calculate_turbulence):
+				self.current_image='Plots'
+				self.controller.show_frame(ACSPlotsFrame)
+			elif(not self.controller.calculate_turbulence and self.controller.reconstruct):
+				self.current_image='Wavefront'
+				self.controller.show_frame(ACSWavefrontFrame)
 		elif(self.current_image=='Plots'):
-			self.current_image='Wavefront'
-			self.toggle_image_button.config(text='Show Data')
-			self.controller.show_frame(ACSWavefrontFrame)
+			if(self.controller.reconstruct):
+				self.current_image='Wavefront'
+				self.controller.show_frame(ACSWavefrontFrame)
+			else:
+				self.current_image='Data'
+				self.controller.show_frame(ACSImageFrame)
 		elif(self.current_image=='Wavefront'):
 			self.current_image='Data'
-			self.toggle_image_button.config(text='Show Plots')
 			self.controller.show_frame(ACSImageFrame)
 
 
