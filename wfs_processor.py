@@ -557,30 +557,3 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
     except StopIteration:
         pass
 
-
-
-def run():
-    filepath = '/home/ian/workspace/acs/data2018_08_28_16_08_25/data2018_08_28_16_08_25.dat'
-    aoi_size = 20
-    focal_length = 6.7e-3
-    pixel_size = 7.4e-6
-    wavelength = 640e-9
-    magnification = 40
-    calculate_turbulence=False
-    reconstruct=True
-
-    file_processor = process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification, calculate_turbulence=calculate_turbulence, reconstruct=reconstruct)
-    
-    status, return_values = next(file_processor)
-    if(status=='aoi locations'):
-        aoi_locations = np.array([[int(val) for val in line.split(',')] for line in return_values])
-        aoi_size = infer_aoi_size(aoi_locations)
-        sorted_aoi_locations = sort_aois(aoi_locations, aoi_size)
-
-        print(sorted_aoi_locations)
-
-
-
-
-if __name__=='__main__':
-    run()
