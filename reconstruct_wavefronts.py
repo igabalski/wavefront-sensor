@@ -1,3 +1,14 @@
+"""
+Script to iterate over and process all wavefront sensor files in a directory.
+Author: Ian Gabalski
+
+This is a script which iterates over a directory tree and performs processing on
+each wavefront sensor data file it finds in the tree. It also writes out a file
+containing the names of the files which have already been processed, in case 
+processing must be stopped and restarted.
+
+"""
+
 import wfs_processor as wfs
 import os
 import numpy as np
