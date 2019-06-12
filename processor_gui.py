@@ -1,3 +1,13 @@
+"""
+Shack-Hartmann wavefront sensor data analysis GUI code.
+Author: Ian Gabalski
+
+The code in this module implements a tkinter GUI to enable easy analysis
+of Shack-Hartmann wavefront sensor data. This GUI can be used to view processing
+as it occurs and visualize the output.
+
+"""
+
 import tkinter as tk
 from tkinter.filedialog import askopenfilename, asksaveasfilename, askdirectory
 import os
