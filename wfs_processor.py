@@ -1,3 +1,15 @@
+"""
+Shack-Hartmann wavefront sensor processing code.
+Author: Ian Gabalski
+
+The code in this module allows one to input a filepath to a raw wavefront sensor
+video file and get back turbulence statistics and reconstructed wavefronts.
+
+This code is intended to be run as the backend of the processor GUI, but can
+also be ran as a standalone set of code. See the docstring for the process_file()
+method for details on how to do this properly.
+
+"""
 import warnings
 warnings.filterwarnings("ignore")
 import numpy as np
@@ -9,13 +21,25 @@ from itertools import combinations
 
 
 def read_file(filepath):
-    #Inputs:
-    # filepath = path to wavefront sensor image file to be read
-    #Returns:
-    # images_array = numpy array of image frames, 16-bit unsigned integer pixel values
-    # time_list = time stamps for each frame
-    # version = file format version
-    # bitdepth = camera bit depth
+    """
+    
+    Parameters
+    ----------
+    filepath : string
+        path to wavefront sensor image file to be read
+    
+    Returns
+    ----------
+    images_array : ndarray
+        image frames as 16-bit unsigned integer pixel values
+    time_list : list
+        time stamps for each frame
+    version : numpy double
+        file format version
+    bitdepth : numpy int32
+        camera bit depth
+    
+    """
 
     try:
         
@@ -54,13 +78,25 @@ def read_file(filepath):
 
 
 def get_aoi_locations(images_array, aoi_size, threshold=0.2):
-    #Inputs:
-    # images_array = the numpy array of images for which to calculate reference spots
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    # threshold = all pixels in summed array less than maxval*threshold are set to 0
-    #Returns:
-    # aoi_locations = list of strings of the form 'x,y' where x, y are integer locations of top left corner of aois
-    # summed_array = summed array, summed along each pixel axis individually
+    """
+    
+    Parameters
+    ----------
+    images_array : ndarray, 3-dimensional
+        the numpy array of images for which to calculate reference spots
+    aoi_size : int
+        the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
+    threshold : float, optional
+        all pixels in summed array less than maxval*threshold are set to 0
+    
+    Returns
+    ----------
+    aoi_locations : list
+        list of strings of the form 'x,y' where x, y are integer locations of top left corner of aois
+    summed_array : ndarray, 2-dimensional
+        images_array summed along each pixel axis individually
+    
+    """
     
     summed_array = np.sum(images_array, axis=0)
     maxval = summed_array.max()
@@ -92,12 +128,23 @@ def get_aoi_locations(images_array, aoi_size, threshold=0.2):
 
 
 def find_centroids(image, aoi_locations, aoi_size):
-    #Inputs:
-    # image = numpy ndarray of floating point values
-    # aoi_locations = list of strings of the form 'x,y' where x, y are integer locations of top left corner of aois
-    # aoi_size_x, aoi_size_y = aoi size in pixels
-    #Returns:
-    # centroids = dictionary of the form {'x_location,y_location':[x_centroid, y_centroid]} referenced from top left of aois
+    """
+    
+    Parameters
+    ----------
+    image : ndarray, 2-dimensional
+    aoi_locations : list
+        contains strings of the form 'x,y' where x, y are integer locations of top left corner of aois
+    aoi_size : int
+        area of interest size in pixels, assumes square aois
+    
+    Returns
+    ----------
+    centroids : dict
+        entries are of the form {'x_location,y_location':[x_centroid, y_centroid]} 
+        locations referenced from top left of aois
+    
+    """
     
     centroids={}
     for aoi in aoi_locations:
@@ -111,30 +158,58 @@ def find_centroids(image, aoi_locations, aoi_size):
 
 
 def calculate_references(summed_array, aoi_locations, aoi_size):
-    #Inputs:
-    # summed_array = the summed image of wavefront sensor spots from which to calculate reference centroids
-    # aoi_locations = list of strings of the form 'x,y' where x, y are integer locations of top left corner of aois
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    # threshold = all pixels less than the max pixel value times threshold set to zero to eliminate noise
-    #Returns:
-    # references = a dictionary of the form {'x_location,y_location':[x_centroid, y_centroid]} referenced from top left of aois, representing reference centroids
-
+    """
+    
+    Parameters
+    ----------
+    summed_array : ndarray, 2-dimensional
+        the summed image of wavefront sensor spots from which to calculate reference centroids
+    aoi_locations : list
+        contains strings of the form 'x,y' where x, y are integer locations of top left corner of aois
+    aoi_size : int
+        area of interest size in pixels, assumes square aois
+    
+    Returns
+    ----------
+    references : dict
+        entries are of the form {'x_location,y_location':[x_centroid, y_centroid]} 
+        centroid locations referenced from top left of aois
+    
+    """
+    
     references = find_centroids(summed_array, aoi_locations, aoi_size)
 
     return references
 
 
 def find_slopes(centroids, references, focal_length, pixel_size, wavelength, magnification):
-    #Inputs:
-    # centroids = dictionary of form {'x_location,y_location': [x_centroid, y_centroid]} referenced from top left
-    # references = dictionary of form {'x_location,y_location': [x_reference, y_reference]} referenced from top left
-    # focal_length = float representing focal length of lenslets in meters
-    # wavelength = wavelength in meters
-    # magnification = magnification as a raw number
-    # pixel_size = float representing pixel pitch in meters
-    #Returns:
-    # differences = dictionary of the form {'x_location,y_location':[relative_x_centroid, relative_y_centroid]} in pixels
-    # gradients = dictionary of the form {'x_location,y_location':[phase_x_gradient, phase_y_gradient]} in meters^-1
+    """
+    
+    Parameters
+    ----------
+    centroids : dict
+        entries are of form {'x_location,y_location': [x_centroid, y_centroid]} 
+        locations referenced from top left
+    references : dict
+        entries are of form {'x_location,y_location': [x_reference, y_reference]}
+        locations referenced from top left
+    focal_length : number
+        represents focal length of lenslets in meters
+    wavelength : number
+        wavelength in meters
+    magnification : number
+        magnification as a raw number
+    pixel_size : number
+        represents pixel pitch (separation) in meters
+    
+    Returns
+    ----------
+    differences : dict
+        entries are of the form {'x_location,y_location':[relative_x_centroid, relative_y_centroid]} in pixels
+    gradients : dict
+        entries are of the form {'x_location,y_location':[phase_x_gradient, phase_y_gradient]} in meters^-1
+    
+    """
     
     differences = {}
     gradients = {}
@@ -147,13 +222,25 @@ def find_slopes(centroids, references, focal_length, pixel_size, wavelength, mag
 
 
 def get_unbinned_ssf(gradients, aoi_size):
-    #Inputs:
-    # gradients = dictionary of form {'x_location,y_location': [x_gradient, y_gradient]} referenced from top left
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    #Returns:
-    # ssf = unbinned full slope structure function array of the form [r_separation (aois), (grad_phi1-grad_phi2)**2]
-    # ssfx = unbinned x slope structure function array of the same form
-    # ssfy = unbinned y slope structure function array of the same form
+    """
+    
+    Parameters
+    ----------
+    gradients : dict
+        entries are of the form {'x_location,y_location':[phase_x_gradient, phase_y_gradient]} in meters^-1
+    aoi_size : int
+        area of interest size in pixels, assumes square aois
+    
+    Returns
+    ----------
+    ssf : ndarray
+        unbinned full slope structure function array of the form [r_separation (aois), (grad_phi1-grad_phi2)**2]
+    ssfx : ndarray
+        unbinned x slope structure function array of the same form
+    ssfy : ndarray
+        unbinned y slope structure function array of the same form
+    
+    """
     
     ssf = []
     ssfx = []
@@ -179,11 +266,22 @@ def get_unbinned_ssf(gradients, aoi_size):
 
 
 def get_binned_ssf(unbinned_ssf, bin_size=1):
-    #Inputs:
-    # unbinned_ssf = numpy array, unbinned full slope structure function array of the form [r_separation (aois), (grad_phi1-grad_phi2)**2]
-    # bin_size = size of bins in aois
-    #Returns:
-    # binned_ssf = binned slope structure function of the form [r_separation (aois), mean(grad_phi1-grad_phi2)**2(r_separation)]
+    """
+    
+    Parameters
+    ----------
+    unbinned_ssf : ndarray
+        unbinned full slope structure function array of the form [r_separation (aois), (grad_phi1-grad_phi2)**2]
+    bin_size : number, optional
+        size of bins in aois
+    
+    Returns
+    ----------
+    binned_ssf : ndarray
+        binned slope structure function of the form [r_separation (aois), mean(grad_phi1-grad_phi2)**2(r_separation)]
+    
+    """
+    
     rmin = int(np.amin(unbinned_ssf[:,0]))
     rmax = int(np.amax(unbinned_ssf[:,0]))
     binned_ssf = [ [r+bin_size/2, np.mean(unbinned_ssf[np.logical_and(unbinned_ssf[:,0]>=r, unbinned_ssf[:,0]<r+bin_size)][:,1])] for r in range(rmin, rmax, bin_size)]
@@ -192,13 +290,28 @@ def get_binned_ssf(unbinned_ssf, bin_size=1):
 
 
 def fit_ssf(ssf_array, aoi_size, pixel_size, magnification, fit_type='full'):
-    #Inputs:
-    # ssf_array = slope structure function array of the form [r_separation (aois), (grad_phi1-grad_phi2)**2]
-    # aoi_size = size of aois in pixels
-    # pixel_size = size of pixels in meters
-    # magnification = magnification as a raw number
-    #Returns:
-    # r0 = Fried parameter measured from fit
+    """
+    
+    Parameters
+    ----------
+    ssf_array : ndarray
+        binned slope structure function of the form [r_separation (aois), mean(grad_phi1-grad_phi2)**2(r_separation)]
+    aoi_size : int
+        area of interest size in pixels, assumes square aois
+    pixel_size : number
+        represents pixel pitch (separation) in meters
+    magnification : number
+        magnification as a raw number
+    fit_type : string, optional
+        one of {'full', 'individual'}
+        denotes which functional form to use to fit the slope structure function
+    
+    Returns
+    ----------
+    r0 : number
+        Fried parameter measured from fit
+    
+    """
     
     ssf_array = np.array(ssf_array)
     d_sub = aoi_size*pixel_size*magnification
@@ -220,15 +333,21 @@ def fit_ssf(ssf_array, aoi_size, pixel_size, magnification, fit_type='full'):
     return params[0]
 
 
-
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 def infer_aoi_size(aoi_locations):
-    #Inputs:
-    # aoi_locations = unsorted aoi locations; Either a dict of the form {'x,y': [x_centroid, y_centroid]'}, or a numpy array of the form [x,y]
-    #Returns:
-    # aoi_size_x, aoi_size_y = floats indicating inferred aoi separations in x and y directions
-
+    """
+    
+    Parameters
+    ----------
+    aoi_locations : dict or ndarray
+        unsorted aoi locations; Either a dict of the form {'x,y': [x_centroid, y_centroid]'}, or a numpy array of the form [x,y]
+    
+    Returns
+    ----------
+    aoi_size_x, aoi_size_y : number
+        floats indicating inferred aoi separations in x and y directions
+    
+    """
+    
     if(isinstance(aoi_locations, dict)):
         aoi_locations = np.array([[int(x) for x in aoi.split(',')] for aoi in aoi_locations])
 
@@ -257,17 +376,28 @@ def infer_aoi_size(aoi_locations):
 
 
 def sort_aois(aoi_locations, aoi_size, buffer_size=3):
-    #Inputs:
-    # aoi_locations = unsorted aoi locations; Either a dict of the form {'x,y': [x_centroid, y_centroid]'}, or a numpy array of the form [x,y]
-    # aoi_size = the size of a wavefront sensor subaperture in pixels ; If single value, represents square aoi. If tuple, represents (aoi_size_x, aoi_size_y)
-    # buffer_size = pixel buffer in each direction to allow for slightly irregular spacing of aois
-    #Returns:
-    # sorted_aoi_locations = numpy array of sorted aoi_locations list; array iterates top left to bottom right, row by row
+    """
+    
+    Parameters
+    ----------
+    aoi_locations : dict or ndarray
+        unsorted aoi locations; Either a dict of the form {'x,y': [x_centroid, y_centroid]'}, or a numpy array of the form [x,y]
+    aoi_size : number or tuple
+        the size of a wavefront sensor subaperture in pixels. 
+        If single value, represents square aoi. 
+        If tuple, represents (aoi_size_x, aoi_size_y)
+    buffer_size : int
+        pixel buffer in each direction to allow for slightly irregular spacing of aois
+    
+    Returns
+    ----------
+    sorted_aoi_locations : ndarray
+        numpy array of sorted aoi_locations list; array iterates top left to bottom right, row by row
+    
+    """
     
     if(isinstance(aoi_locations, dict)):
         aoi_locations = np.array([[int(x) for x in aoi.split(',')] for aoi in aoi_locations])
-
-
 
     if(isinstance(aoi_size, tuple)):
         aoi_size_x, aoi_size_y = aoi_size
@@ -289,25 +419,46 @@ def sort_aois(aoi_locations, aoi_size, buffer_size=3):
 
 
 def get_current_aoi(aoi, aoi_locations):
-    #Inputs:
-    # aoi = the current aoi location of the form [x,y]
-    # aoi_locations = numpy array of all aoi locations
-    #Returns:
-    # mask = numpy array mask indicating which index in aoi_locations represents current aoi
+    """
     
+    Parameters
+    ----------
+    aoi : list or ndarray
+        the current aoi location of the form [x,y]
+    aoi_locations : iterable
+        all aoi locations
+    
+    Returns
+    ----------
+    mask : ndarray, boolean mask
+        numpy array mask indicating which index in aoi_locations represents current aoi
+    
+    """
     mask = [np.array_equal(x, aoi) for x in aoi_locations]
     
     return mask
 
 
 def get_adjacent_aois(aoi, aoi_locations, aoi_size, buffer_size=3):
-    #Inputs:
-    # aoi = numpy 1-D array of the form [x,y] representing aoi pixel top left corner location
-    # aoi_locations = numpy array of all aoi locations of the form [x,y]
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    # buffer_size = pixel buffer in each direction to allow for slightly irregular spacing of aois
-    #Returns:
-    # mask = numpy array mask indicating which aois in aoi_locations are adjacent to aoi
+    """
+    
+    Parameters
+    ----------
+    aoi : list or ndarray
+        must be of the form [x,y] representing aoi pixel top left corner location
+    aoi_locations : ndarray
+        numpy array of all aoi locations of the form [x,y]
+    aoi_size : int
+        the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
+    buffer_size : int, optional
+        pixel buffer in each direction to allow for slightly irregular spacing of aois
+    
+    Returns
+    ----------
+    mask : ndarray, boolean mask
+        numpy array mask indicating which aois in aoi_locations are adjacent to aoi
+    
+    """
     
     x_mask_lower = np.logical_and(aoi_locations[:,0]+aoi_size+buffer_size>=aoi[0], aoi_locations[:,0]+aoi_size-buffer_size<=aoi[0])
     x_mask_upper = np.logical_and(aoi_locations[:,0]-aoi_size+buffer_size>=aoi[0], aoi_locations[:,0]-aoi_size-buffer_size<=aoi[0])
@@ -324,14 +475,25 @@ def get_adjacent_aois(aoi, aoi_locations, aoi_size, buffer_size=3):
 
 
 def get_aoi_signature(aoi, adjacent_aoi, buffer_size=3):
-    #Inputs:
-    # aoi = current aoi location of the form [x,y]
-    # adjacent_aoi = adjacent aoi location to be compared to current aoi
-    # buffer_size = pixel buffer in each direction to allow for slightly irregular spacing of aois
-    #Returns:
-    # signature = tuple of the form (x_signature, y_signature)
-    # NOTE: each signature is +1 if adjacent_aoi is positively located w.r.t. aoi,
-    #       -1 if negatively located w.r.t. aoi, else 0
+    """
+    
+    Parameters
+    ----------
+    aoi : list or ndarray
+        must be of the form [x,y] representing aoi pixel top left corner location
+    adjacent_aoi : list or ndarray
+        adjacent aoi location to be compared to current aoi
+    buffer_size : int, optional
+        pixel buffer in each direction to allow for slightly irregular spacing of aois
+    
+    Returns
+    ----------
+    signature : iterable
+        must be of the form (x_signature, y_signature)
+    
+    NOTE: 
+    Each signature is +1 if adjacent_aoi is positively located w.r.t. aoi,-1 if negatively located w.r.t. aoi, else 0
+    """
     
     x_signature, y_signature = (0,0)
     
@@ -351,13 +513,25 @@ def get_aoi_signature(aoi, adjacent_aoi, buffer_size=3):
 
 
 def get_aoi_index(aoi, xmin, ymin, aoi_size, buffer_size=3):
-    #Inputs:
-    # aoi = current aoi location of the form [x,y]
-    # xmin, ymin = minimum x and y aoi locations (does not have to be from same aoi)
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    # buffer_size = pixel buffer in each direction to allow for slightly irregular spacing of aois
-    #Returns:
-    # index = array of the form [x_index, y_index] representing aoi location index relative to top left
+    """
+    
+    Parameters
+    ----------
+    aoi : list or ndarray
+        must be of the form [x,y] representing aoi pixel top left corner location
+    xmin, ymin : int
+        minimum x and y aoi locations (does not have to be from same aoi)
+    aoi_size : int
+        the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
+    buffer_size : int, optional
+        pixel buffer in each direction to allow for slightly irregular spacing of aois
+    
+    Returns
+    ----------
+    index : tuple
+        tuple of the form (x_index, y_index) representing aoi location index relative to top left
+    
+    """
     
     index = (int((aoi[0]-xmin+2*buffer_size)/aoi_size), int((aoi[1]-ymin+2*buffer_size)/aoi_size))
     
@@ -365,21 +539,40 @@ def get_aoi_index(aoi, xmin, ymin, aoi_size, buffer_size=3):
 
 
 def to_string(aoi):
-    #Inputs:
-    # aoi = numpy int32 array of the form [x,y]
-    #Returns:
-    # string_representation = hashable string representation of aoi; use as key for gradients dict
+    """
+    
+    Parameters
+    ----------
+    aoi : ndarray
+        numpy int32 array of the form [x,y]
+    
+    Returns
+    ----------
+    string_representation : string
+        hashable string representation of aoi; use as key for gradients dict
+    
+    """
     
     string_representation = str(aoi[0])+','+str(aoi[1])
     return string_representation
 
 
 def build_reconstruction_matrix(sorted_aoi_locations, aoi_size):
-    #Inputs:
-    # sorted_aoi_locations = numpy array of sorted aoi_locations list; array iterates top left to bottom right, row by row
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    #Returns:
-    # A = Southwell reconstruction matrix, shape is (num_equations, num_aois)
+    """
+    
+    Parameters
+    ----------
+    sorted_aoi_locations : ndarray
+        numpy array of sorted aoi_locations list; array iterates top left to bottom right, row by row
+    aoi_size : int
+        the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
+    
+    Returns
+    ----------
+    A : ndarray
+        Southwell reconstruction matrix, shape is (num_equations, num_aois)
+    
+    """
     
     num_aois = len(sorted_aoi_locations)
     num_equations = num_aois+1
@@ -397,14 +590,27 @@ def build_reconstruction_matrix(sorted_aoi_locations, aoi_size):
 
 
 def build_slope_vector(gradients, sorted_aoi_locations, aoi_size, pixel_size, magnification):
-    #Inputs:
-    # gradients = dictionary of form {'x_location,y_location': [x_gradient, y_gradient]} referenced from top left 
-    # sorted_aoi_locations = numpy array of sorted aoi_locations list; array iterates top left to bottom right, row by row
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    # pixel_size = size of pixels in meters
-    # magnification = magnification as a raw number
-    #Returns:
-    # S = Southwell slope vector, shape is (num_equations)
+    """
+    
+    Parameters
+    ----------
+    gradients : dict
+        entries are of form {'x_location,y_location': [x_gradient, y_gradient]}
+        locations referenced from top left 
+    sorted_aoi_locations ndarray
+        numpy array of sorted aoi_locations list; array iterates top left to bottom right, row by row
+    aoi_size : int
+        the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
+    pixel_size : number
+        size of pixels in meters
+    magnification : number
+        magnification as a raw number
+    
+    Returns
+    ----------
+    S : ndarray
+        Southwell slope vector, shape is (num_equations)
+    """
     
     num_aois = len(sorted_aoi_locations)
     num_equations = num_aois+1
@@ -431,15 +637,29 @@ def build_slope_vector(gradients, sorted_aoi_locations, aoi_size, pixel_size, ma
 
 
 def reconstruct_wavefront(A, S, sorted_aoi_locations, aoi_size, buffer_size=3):
-    #Inputs:
-    # A = Southwell reconstruction matrix, shape is (num_equations, num_aois)
-    # S = Southwell slope vector, shape is (num_equations)
-    # sorted_aoi_locations = numpy array of sorted aoi_locations list; array iterates top left to bottom right, row by row
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    # buffer_size = pixel buffer in each direction to allow for slightly irregular spacing of aois
-    #Returns:
-    # wavefront = a numpy float32 array of the reconstructed wavefront (value is 0 if no aoi at location)
-    # NOTE: Solves the system A*phi=S through iterative least-squares. Phi vector is then reshaped to 2-D wavefront image.
+    """
+    
+    Parameters
+    ----------
+    A : ndarray
+        Southwell reconstruction matrix, shape is (num_equations, num_aois)
+    S : ndarray
+        Southwell slope vector, shape is (num_equations)
+    sorted_aoi_locations : ndarray
+        numpy array of sorted aoi_locations list
+        array iterates top left to bottom right, row by row
+    aoi_size : int
+        the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
+    buffer_size int, optional 
+        pixel buffer in each direction to allow for slightly irregular spacing of aois
+    
+    Returns
+    ----------
+    wavefront : ndarray
+        a numpy float32 array of the reconstructed wavefront (value is 0 if no aoi at location)
+    NOTE:
+    Solves the system A*phi=S through iterative least-squares. Phi vector is then reshaped to 2-D wavefront image.
+    """
     
     phi, info, num_iterations, normr, normar, norma, conda, normx = iterative_solver(A, S)
     
@@ -457,23 +677,39 @@ def reconstruct_wavefront(A, S, sorted_aoi_locations, aoi_size, buffer_size=3):
 
 
 def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magnification, calculate_turbulence=False, reconstruct=False):
-    #Inputs:
-    # filepath = path to the file to be processed
-    # aoi_size = the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
-    # focal_length = float representing focal length of lenslets in meters
-    # pixel_size = size of pixels in meters
-    # wavelength = wavelength in meters
-    # magnification = magnification of telescope system as a raw number
-    # calculate_turbulence = whether or not to calculate turbulence parameters with slope structure function methods
-    # reconstruct = whether or not to reconstruct wavefront using Southwell reconstructor
-    #Yields:
-    # (Always) status = one of 'aoi locations', 'framenum', 'turbulence', 'wavefront', 'both', indicates what is being returned at each yield
-    # (First) aoi_locations = a list of aoi location strings of the form 'x_topleft_corner,y_topleft_corner'
-    # (Intermediate) framenum = index of frame that was just processed
-    # (Final) turbulence_outputs = list of turbulence parameters and slope structure functions (possibly empty if turbulence not calculated)
-    # (Final) wavefronts_list = list of reconstructed wavefront images (possibly empty if wavefront not reconstructed)
+    """
+    
+    Parameters
+    ----------
+    filepath : string
+        path to the file to be processed
+    aoi_size : int
+        the size of a wavefront sensor subaperture in pixels (assumes square AOIs)
+    focal_length : number
+        represents focal length of lenslets in meters
+    pixel_size : number
+        size of pixels in meters
+    wavelength : number
+        wavelength in meters
+    magnification : number
+        magnification of telescope system as a raw number
+    calculate_turbulence : boolean, optional
+        whether or not to calculate turbulence parameters with slope structure function methods
+    reconstruct : boolean, optional
+        whether or not to reconstruct wavefront using Southwell reconstructor
+    
+    Yields:
+    (Always) status : string
+        one of 'aoi locations', 'framenum', 'turbulence', 'wavefront', 'both', indicates what is being returned at each yield
+    (First) aoi_locations : list
+        contains aoi location strings of the form 'x_topleft_corner,y_topleft_corner'
+    (Intermediate) framenum : int
+        index of frame that was just processed
+    (Final) turbulence_outputs : list
+        contains turbulence parameters and slope structure functions (possibly empty if turbulence not calculated)
+    (Final) wavefronts_list : list
+        contains reconstructed wavefront images (possibly empty if wavefront not reconstructed)
 
-    '''
     NOTE:
     This function is a generator which iterates over frames and yields in between frames.
     The first yield value is the list of aoi location coordinates, referenced to the top left corner of the aoi.
@@ -492,7 +728,8 @@ def process_file(filepath, aoi_size, focal_length, pixel_size, wavelength, magni
         else:
             ...update gui with processed information...
     turbulence_outputs, wavefronts = return_values
-    '''
+    
+    """
 
     images_array, time_list, version, bitdepth = read_file(filepath)
     aoi_locations, summed_array = get_aoi_locations(images_array, aoi_size)
